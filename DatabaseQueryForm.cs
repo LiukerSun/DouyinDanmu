@@ -28,8 +28,10 @@ namespace DouyinDanmu
             try
             {
                 // 初始化时间范围（默认最近7天）
+                // 结束时间设置为当前时间
                 dateTimePickerEnd.Value = DateTime.Now;
-                dateTimePickerStart.Value = DateTime.Now.AddDays(-7);
+                // 开始时间设置为7天前的00:00
+                dateTimePickerStart.Value = DateTime.Now.AddDays(-7).Date;
 
                 // 添加时间选择器事件处理
                 dateTimePickerStart.ValueChanged += DateTimePicker_ValueChanged;
@@ -172,8 +174,9 @@ namespace DouyinDanmu
             checkBoxLike.Checked = true;
             checkBoxSocial.Checked = true;
             
+            // 重置时间范围（与初始化逻辑保持一致）
             dateTimePickerEnd.Value = DateTime.Now;
-            dateTimePickerStart.Value = DateTime.Now.AddDays(-7);
+            dateTimePickerStart.Value = DateTime.Now.AddDays(-7).Date;
             
             listViewResults.Items.Clear();
             labelResultCount.Text = "查询结果: 0条";
@@ -219,7 +222,7 @@ namespace DouyinDanmu
             var filter = new QueryFilter
             {
                 StartTime = dateTimePickerStart.Value,
-                EndTime = dateTimePickerEnd.Value.AddDays(1).AddSeconds(-1), // 包含结束日期的整天
+                EndTime = dateTimePickerEnd.Value, // 直接使用用户选择的结束时间
                 UserId = string.IsNullOrWhiteSpace(textBoxUserId.Text) ? null : textBoxUserId.Text.Trim(),
                 UserName = string.IsNullOrWhiteSpace(textBoxUserName.Text) ? null : textBoxUserName.Text.Trim(),
                 MessageTypes = new List<string>()

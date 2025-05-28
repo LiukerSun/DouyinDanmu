@@ -12,8 +12,10 @@ namespace DouyinDanmu.Services
     public static class SettingsManager
     {
         private static readonly string SettingsFilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "DouyinLiveFetcher",
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp",
+            ".net",
+            "DouyinDanmu",
             "settings.json"
         );
 

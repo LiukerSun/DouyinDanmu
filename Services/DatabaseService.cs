@@ -29,38 +29,20 @@ namespace DouyinDanmu.Services
                 throw new InvalidOperationException($"SQLite 初始化失败: {ex.Message}。请确保已安装 Visual C++ Redistributable。", ex);
             }
 
-            // 优先使用应用程序目录，如果无法写入则使用用户数据目录
-            string dbPath;
+            // 统一使用固定的数据目录，不在运行目录创建任何文件
+            var appDataPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Temp",
+                ".net",
+                "DouyinDanmu"
+            );
             
-            try
+            if (!Directory.Exists(appDataPath))
             {
-                // 尝试使用应用程序目录
-                var appDir = AppDomain.CurrentDomain.BaseDirectory;
-                var testFile = Path.Combine(appDir, "test_write.tmp");
-                
-                // 测试是否可以在应用程序目录写入文件
-                File.WriteAllText(testFile, "test");
-                File.Delete(testFile);
-                
-                // 如果成功，使用应用程序目录
-                dbPath = Path.Combine(appDir, "douyin_live_messages.db");
+                Directory.CreateDirectory(appDataPath);
             }
-            catch
-            {
-                // 如果应用程序目录无法写入，使用用户数据目录
-                var appDataPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "DouyinLiveFetcher"
-                );
-                
-                if (!Directory.Exists(appDataPath))
-                {
-                    Directory.CreateDirectory(appDataPath);
-                }
-                
-                dbPath = Path.Combine(appDataPath, "douyin_live_messages.db");
-            }
-
+            
+            var dbPath = Path.Combine(appDataPath, "douyin_live_messages.db");
             _connectionString = $"Data Source={dbPath}";
         }
 

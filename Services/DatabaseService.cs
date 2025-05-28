@@ -5,6 +5,7 @@ using DouyinDanmu.Models;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using SQLitePCL;
 
 namespace DouyinDanmu.Services
 {
@@ -18,6 +19,16 @@ namespace DouyinDanmu.Services
 
         public DatabaseService()
         {
+            // 初始化 SQLite
+            try
+            {
+                SQLitePCL.Batteries.Init();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"SQLite 初始化失败: {ex.Message}。请确保已安装 Visual C++ Redistributable。", ex);
+            }
+
             // 优先使用应用程序目录，如果无法写入则使用用户数据目录
             string dbPath;
             

@@ -16,9 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="sign.js">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <EmbeddedResource Include="sign.js" />
   </ItemGroup>
 
 </Project>

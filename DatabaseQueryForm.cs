@@ -47,7 +47,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 时间选择器值改变事件处理
         /// </summary>
-        private void DateTimePicker_ValueChanged(object sender, EventArgs e)
+        private void DateTimePicker_ValueChanged(object? sender, EventArgs e)
         {
             ValidateTimeRange(sender as DateTimePicker);
         }

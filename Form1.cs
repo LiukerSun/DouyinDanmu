@@ -108,7 +108,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 窗口大小变化事件处理
         /// </summary>
-        private void Form1_Resize(object sender, EventArgs e)
+        private void Form1_Resize(object? sender, EventArgs e)
         {
             AdjustLayout();
         }
@@ -873,15 +873,41 @@ namespace DouyinDanmu
         {
             try
             {
+                UpdateStatus("正在初始化数据库...");
                 _databaseService = new DatabaseService();
                 await _databaseService.InitializeAsync();
                 
                 var dbPath = _databaseService.GetDatabasePath();
                 UpdateStatus($"数据库已初始化: {dbPath}");
+                
+                // 验证数据库文件是否存在
+                if (File.Exists(dbPath))
+                {
+                    var fileInfo = new FileInfo(dbPath);
+                    UpdateStatus($"数据库文件大小: {fileInfo.Length} 字节");
+                }
+                else
+                {
+                    UpdateStatus("警告: 数据库文件不存在");
+                }
             }
             catch (Exception ex)
             {
-                UpdateStatus($"数据库初始化失败: {ex.Message}");
+                var errorMsg = $"数据库初始化失败: {ex.Message}";
+                if (ex.InnerException != null)
+                {
+                    errorMsg += $" 内部错误: {ex.InnerException.Message}";
+                }
+                
+                UpdateStatus(errorMsg);
+                
+                // 显示详细错误信息
+                MessageBox.Show(
+                    $"数据库初始化失败，可能影响消息保存功能。\n\n错误详情:\n{errorMsg}\n\n程序将继续运行，但不会保存消息到数据库。",
+                    "数据库初始化错误",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
             }
         }
 

@@ -7,19 +7,6 @@ namespace DouyinDanmu
         /// </summary>
         private System.ComponentModel.IContainer components = null;
 
-        /// <summary>
-        /// Clean up any resources being used.
-        /// </summary>
-        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing && (components != null))
-            {
-                components.Dispose();
-            }
-            base.Dispose(disposing);
-        }
-
         #region Windows Form Designer generated code
 
         /// <summary>
@@ -50,10 +37,10 @@ namespace DouyinDanmu
             this.groupBoxWatchedUsers.Controls.Add(this.listBoxUserIds);
             this.groupBoxWatchedUsers.Location = new System.Drawing.Point(12, 80);
             this.groupBoxWatchedUsers.Name = "groupBoxWatchedUsers";
-            this.groupBoxWatchedUsers.Size = new System.Drawing.Size(360, 250);
+            this.groupBoxWatchedUsers.Size = new System.Drawing.Size(460, 280);
             this.groupBoxWatchedUsers.TabIndex = 0;
             this.groupBoxWatchedUsers.TabStop = false;
-            this.groupBoxWatchedUsers.Text = "关注的用户ID列表";
+            this.groupBoxWatchedUsers.Text = "关注的用户列表";
             // 
             // listBoxUserIds
             // 
@@ -61,7 +48,7 @@ namespace DouyinDanmu
             this.listBoxUserIds.ItemHeight = 17;
             this.listBoxUserIds.Location = new System.Drawing.Point(15, 25);
             this.listBoxUserIds.Name = "listBoxUserIds";
-            this.listBoxUserIds.Size = new System.Drawing.Size(330, 174);
+            this.listBoxUserIds.Size = new System.Drawing.Size(430, 208);
             this.listBoxUserIds.TabIndex = 0;
             // 
             // groupBoxAddUser
@@ -71,14 +58,14 @@ namespace DouyinDanmu
             this.groupBoxAddUser.Controls.Add(this.labelUserId);
             this.groupBoxAddUser.Location = new System.Drawing.Point(12, 12);
             this.groupBoxAddUser.Name = "groupBoxAddUser";
-            this.groupBoxAddUser.Size = new System.Drawing.Size(360, 62);
+            this.groupBoxAddUser.Size = new System.Drawing.Size(460, 62);
             this.groupBoxAddUser.TabIndex = 1;
             this.groupBoxAddUser.TabStop = false;
             this.groupBoxAddUser.Text = "添加用户ID";
             // 
             // buttonAdd
             // 
-            this.buttonAdd.Location = new System.Drawing.Point(270, 25);
+            this.buttonAdd.Location = new System.Drawing.Point(370, 25);
             this.buttonAdd.Name = "buttonAdd";
             this.buttonAdd.Size = new System.Drawing.Size(75, 25);
             this.buttonAdd.TabIndex = 2;
@@ -90,7 +77,7 @@ namespace DouyinDanmu
             // 
             this.textBoxUserId.Location = new System.Drawing.Point(80, 27);
             this.textBoxUserId.Name = "textBoxUserId";
-            this.textBoxUserId.Size = new System.Drawing.Size(180, 23);
+            this.textBoxUserId.Size = new System.Drawing.Size(280, 23);
             this.textBoxUserId.TabIndex = 1;
             this.textBoxUserId.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.textBoxUserId_KeyPress);
             // 
@@ -105,9 +92,9 @@ namespace DouyinDanmu
             // 
             // buttonRemove
             // 
-            this.buttonRemove.Location = new System.Drawing.Point(15, 210);
+            this.buttonRemove.Location = new System.Drawing.Point(15, 245);
             this.buttonRemove.Name = "buttonRemove";
-            this.buttonRemove.Size = new System.Drawing.Size(75, 25);
+            this.buttonRemove.Size = new System.Drawing.Size(85, 25);
             this.buttonRemove.TabIndex = 1;
             this.buttonRemove.Text = "删除选中";
             this.buttonRemove.UseVisualStyleBackColor = true;
@@ -115,9 +102,9 @@ namespace DouyinDanmu
             // 
             // buttonClear
             // 
-            this.buttonClear.Location = new System.Drawing.Point(100, 210);
+            this.buttonClear.Location = new System.Drawing.Point(110, 245);
             this.buttonClear.Name = "buttonClear";
-            this.buttonClear.Size = new System.Drawing.Size(75, 25);
+            this.buttonClear.Size = new System.Drawing.Size(85, 25);
             this.buttonClear.TabIndex = 2;
             this.buttonClear.Text = "清空全部";
             this.buttonClear.UseVisualStyleBackColor = true;
@@ -125,7 +112,7 @@ namespace DouyinDanmu
             // 
             // buttonOK
             // 
-            this.buttonOK.Location = new System.Drawing.Point(212, 345);
+            this.buttonOK.Location = new System.Drawing.Point(312, 380);
             this.buttonOK.Name = "buttonOK";
             this.buttonOK.Size = new System.Drawing.Size(75, 30);
             this.buttonOK.TabIndex = 2;
@@ -135,7 +122,7 @@ namespace DouyinDanmu
             // 
             // buttonCancel
             // 
-            this.buttonCancel.Location = new System.Drawing.Point(297, 345);
+            this.buttonCancel.Location = new System.Drawing.Point(397, 380);
             this.buttonCancel.Name = "buttonCancel";
             this.buttonCancel.Size = new System.Drawing.Size(75, 30);
             this.buttonCancel.TabIndex = 3;
@@ -147,7 +134,7 @@ namespace DouyinDanmu
             // 
             this.labelDescription.AutoSize = true;
             this.labelDescription.ForeColor = System.Drawing.SystemColors.GrayText;
-            this.labelDescription.Location = new System.Drawing.Point(12, 350);
+            this.labelDescription.Location = new System.Drawing.Point(12, 385);
             this.labelDescription.Name = "labelDescription";
             this.labelDescription.Size = new System.Drawing.Size(180, 17);
             this.labelDescription.TabIndex = 4;
@@ -158,7 +145,7 @@ namespace DouyinDanmu
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(384, 387);
+            this.ClientSize = new System.Drawing.Size(484, 422);
             this.Controls.Add(this.labelDescription);
             this.Controls.Add(this.buttonCancel);
             this.Controls.Add(this.buttonOK);

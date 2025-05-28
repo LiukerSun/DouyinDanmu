@@ -18,18 +18,38 @@ namespace DouyinDanmu.Services
 
         public DatabaseService()
         {
-            // 数据库文件存储在应用数据目录
-            var appDataPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "DouyinLiveFetcher"
-            );
+            // 优先使用应用程序目录，如果无法写入则使用用户数据目录
+            string dbPath;
             
-            if (!Directory.Exists(appDataPath))
+            try
             {
-                Directory.CreateDirectory(appDataPath);
+                // 尝试使用应用程序目录
+                var appDir = AppDomain.CurrentDomain.BaseDirectory;
+                var testFile = Path.Combine(appDir, "test_write.tmp");
+                
+                // 测试是否可以在应用程序目录写入文件
+                File.WriteAllText(testFile, "test");
+                File.Delete(testFile);
+                
+                // 如果成功，使用应用程序目录
+                dbPath = Path.Combine(appDir, "douyin_live_messages.db");
+            }
+            catch
+            {
+                // 如果应用程序目录无法写入，使用用户数据目录
+                var appDataPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "DouyinLiveFetcher"
+                );
+                
+                if (!Directory.Exists(appDataPath))
+                {
+                    Directory.CreateDirectory(appDataPath);
+                }
+                
+                dbPath = Path.Combine(appDataPath, "douyin_live_messages.db");
             }
 
-            var dbPath = Path.Combine(appDataPath, "douyin_live_messages.db");
             _connectionString = $"Data Source={dbPath}";
         }
 
@@ -38,9 +58,42 @@ namespace DouyinDanmu.Services
         /// </summary>
         public async Task InitializeAsync()
         {
-            _connection = new SqliteConnection(_connectionString);
-            await _connection.OpenAsync();
-            await CreateTablesAsync();
+            try
+            {
+                _connection = new SqliteConnection(_connectionString);
+                await _connection.OpenAsync();
+                await CreateTablesAsync();
+                
+                // 验证数据库是否正确创建
+                await VerifyDatabaseAsync();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"数据库初始化失败: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// 验证数据库表是否正确创建
+        /// </summary>
+        private async Task VerifyDatabaseAsync()
+        {
+            if (_connection == null) return;
+
+            var tableNames = new[] { "chat_messages", "member_messages", "interaction_messages" };
+            
+            foreach (var tableName in tableNames)
+            {
+                var sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=@tableName";
+                using var command = new SqliteCommand(sql, _connection);
+                command.Parameters.AddWithValue("@tableName", tableName);
+                
+                var result = await command.ExecuteScalarAsync();
+                if (result == null)
+                {
+                    throw new InvalidOperationException($"数据库表 {tableName} 创建失败");
+                }
+            }
         }
 
         /// <summary>

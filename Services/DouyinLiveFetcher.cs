@@ -224,7 +224,14 @@ namespace DouyinDanmu.Services
                 _webSocket.Options.SetRequestHeader("User-Agent", 
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
-                await _webSocket.ConnectAsync(new Uri(wssUrl), _cancellationTokenSource.Token);
+                if (_cancellationTokenSource != null)
+                {
+                    await _webSocket.ConnectAsync(new Uri(wssUrl), _cancellationTokenSource.Token);
+                }
+                else
+                {
+                    await _webSocket.ConnectAsync(new Uri(wssUrl), CancellationToken.None);
+                }
                 
                 StatusChanged?.Invoke(this, "WebSocket连接成功");
 
@@ -302,9 +309,10 @@ namespace DouyinDanmu.Services
             
             try
             {
-                while (_webSocket?.State == WebSocketState.Open && !_cancellationTokenSource!.Token.IsCancellationRequested)
+                while (_webSocket?.State == WebSocketState.Open && _cancellationTokenSource?.Token.IsCancellationRequested == false)
                 {
-                    var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cancellationTokenSource.Token);
+                    var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
+                    var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
                     
                     if (result.MessageType == WebSocketMessageType.Binary)
                     {
@@ -331,7 +339,7 @@ namespace DouyinDanmu.Services
             }
             catch (Exception ex)
             {
-                if (!_cancellationTokenSource.Token.IsCancellationRequested)
+                if (_cancellationTokenSource?.Token.IsCancellationRequested != true)
                 {
                     ErrorOccurred?.Invoke(this, ex);
                 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web;
@@ -14,25 +15,61 @@ namespace DouyinDanmu.Services
     public class SignatureGenerator : IDisposable
     {
         private bool _disposed = false;
-        private readonly string _jsFilePath;
+        private readonly string _jsContent;
 
         public SignatureGenerator()
         {
-            // 获取sign.js文件的路径
-            _jsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sign.js");
+            // 从嵌入资源中读取sign.js内容
+            _jsContent = GetEmbeddedResource("DouyinDanmu.sign.js");
             
-            // 如果当前目录没有sign.js，尝试从上级目录查找
-            if (!File.Exists(_jsFilePath))
+            // 如果嵌入资源读取失败，尝试从文件系统读取（向后兼容）
+            if (string.IsNullOrEmpty(_jsContent))
             {
-                var parentDir = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory)?.Parent?.Parent?.Parent?.FullName;
-                if (parentDir != null)
+                var jsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sign.js");
+                if (File.Exists(jsFilePath))
                 {
-                    var originalPath = Path.Combine(parentDir, "DouyinLiveWebFetcher", "sign.js");
-                    if (File.Exists(originalPath))
+                    _jsContent = File.ReadAllText(jsFilePath, Encoding.UTF8);
+                }
+                else
+                {
+                    // 尝试从上级目录查找
+                    var parentDir = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory)?.Parent?.Parent?.Parent?.FullName;
+                    if (parentDir != null)
                     {
-                        _jsFilePath = originalPath;
+                        var originalPath = Path.Combine(parentDir, "DouyinLiveWebFetcher", "sign.js");
+                        if (File.Exists(originalPath))
+                        {
+                            _jsContent = File.ReadAllText(originalPath, Encoding.UTF8);
+                        }
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// 从嵌入资源中获取文件内容
+        /// </summary>
+        /// <param name="resourceName">资源名称</param>
+        /// <returns>资源内容</returns>
+        private string GetEmbeddedResource(string resourceName)
+        {
+            try
+            {
+                var assembly = Assembly.GetExecutingAssembly();
+                using (var stream = assembly.GetManifestResourceStream(resourceName))
+                {
+                    if (stream == null)
+                        return string.Empty;
+                    
+                    using (var reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        return reader.ReadToEnd();
+                    }
+                }
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
@@ -45,8 +82,8 @@ namespace DouyinDanmu.Services
         {
             try
             {
-                // 如果找不到sign.js文件，使用简化版本
-                if (!File.Exists(_jsFilePath))
+                // 如果找不到sign.js内容，使用简化版本
+                if (string.IsNullOrEmpty(_jsContent))
                 {
                     return GenerateSimpleSignature(wssUrl);
                 }
@@ -94,14 +131,8 @@ namespace DouyinDanmu.Services
                 // 创建临时的Node.js脚本
                 var tempScript = Path.GetTempFileName() + ".js";
                 var jsCode = $@"
-const fs = require('fs');
-const path = require('path');
-
-// 读取sign.js文件
-const signJs = fs.readFileSync('{_jsFilePath.Replace("\\", "\\\\")}', 'utf8');
-
-// 执行sign.js
-eval(signJs);
+// 嵌入的sign.js内容
+{_jsContent}
 
 // 调用get_sign函数
 const signature = get_sign('{md5Hash}');

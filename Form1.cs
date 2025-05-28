@@ -58,6 +58,9 @@ namespace DouyinDanmu
             
             // 初始化布局
             AdjustLayout();
+            
+            // 测试JavaScript引擎
+            TestJavaScriptEngineOnStartup();
         }
 
         /// <summary>
@@ -1007,6 +1010,7 @@ namespace DouyinDanmu
                 _fetcher = new Services.DouyinLiveFetcher(liveId);
                 _fetcher.MessageReceived += OnMessageReceived;
                 _fetcher.StatusChanged += OnStatusChanged;
+                _fetcher.ErrorOccurred += OnErrorOccurred;
 
                 await _fetcher.StartAsync();
                 
@@ -1043,6 +1047,7 @@ namespace DouyinDanmu
                 {
                     _fetcher.MessageReceived -= OnMessageReceived;
                     _fetcher.StatusChanged -= OnStatusChanged;
+                    _fetcher.ErrorOccurred -= OnErrorOccurred;
                     await _fetcher.StopAsync();
                     _fetcher = null;
                 }
@@ -1057,6 +1062,35 @@ namespace DouyinDanmu
             catch (Exception ex)
             {
                 UpdateStatus($"断开连接时出错: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 错误处理事件
+        /// </summary>
+        private void OnErrorOccurred(object? sender, Exception ex)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action<object?, Exception>(OnErrorOccurred), sender, ex);
+                return;
+            }
+
+            UpdateStatus($"发生错误: {ex.Message}");
+            
+            // 如果是WebSocket连接错误，提供更详细的信息
+            if (ex.Message.Contains("WebSocket") || ex.Message.Contains("连接") || ex.Message.Contains("网络"))
+            {
+                UpdateStatus($"详细错误信息: {ex}");
+                
+                // 自动重置连接状态
+                if (_isConnected)
+                {
+                    _isConnected = false;
+                    buttonConnect.Text = "连接";
+                    buttonConnect.Enabled = true;
+                    textBoxLiveId.Enabled = true;
+                }
             }
         }
 
@@ -1096,20 +1130,17 @@ namespace DouyinDanmu
                 }
 
                 var sb = new StringBuilder();
-                sb.AppendLine("未知消息类型统计:");
-                sb.AppendLine("".PadRight(50, '='));
+                sb.AppendLine("未知消息类型统计：");
+                sb.AppendLine();
                 
-                // 按出现次数排序
-                var sortedTypes = unknownTypes.OrderByDescending(kvp => kvp.Value);
-                
-                foreach (var kvp in sortedTypes)
+                foreach (var kvp in unknownTypes.OrderByDescending(x => x.Value))
                 {
                     sb.AppendLine($"{kvp.Key}: {kvp.Value} 次");
                 }
                 
-                sb.AppendLine("".PadRight(50, '='));
-                sb.AppendLine($"总计: {unknownTypes.Count} 种未知消息类型");
-
+                sb.AppendLine();
+                sb.AppendLine("这些消息类型可能是新增的或者暂未实现解析的类型。");
+                
                 MessageBox.Show(sb.ToString(), "未知消息类型统计", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -1200,6 +1231,35 @@ namespace DouyinDanmu
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning
                 );
+            }
+        }
+
+        /// <summary>
+        /// 在程序启动时测试JavaScript引擎
+        /// </summary>
+        private void TestJavaScriptEngineOnStartup()
+        {
+            try
+            {
+                UpdateStatus("正在测试JavaScript引擎...");
+                
+                // 简单测试SignatureGenerator是否可用
+                using var signatureGenerator = new Services.SignatureGenerator();
+                var testUrl = "wss://webcast3-ws-web-lq.douyin.com/webcast/im/push/v2/?test=1";
+                var signature = signatureGenerator.GenerateSignature(testUrl);
+                
+                if (!string.IsNullOrEmpty(signature))
+                {
+                    UpdateStatus("JavaScript引擎测试成功");
+                }
+                else
+                {
+                    UpdateStatus("JavaScript引擎测试失败：签名为空");
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"JavaScript引擎测试失败: {ex.Message}");
             }
         }
 

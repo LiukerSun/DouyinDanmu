@@ -2,24 +2,94 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <RootNamespace>DouyinDanmu</RootNamespace>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <StartupObject>DouyinDanmu.Program</StartupObject>
+    
+    <!-- 默认配置：框架依赖（最小文件） -->
     <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    
+    <!-- 启动速度优化 -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRunShowWarnings>true</PublishReadyToRunShowWarnings>
+    <ReadyToRunUseCrossgen2>true</ReadyToRunUseCrossgen2>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
+    
+    <!-- 单文件优化 -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    
+    <!-- 裁剪优化（保守模式） -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    
+    <!-- 调试信息优化 -->
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    
+    <!-- 启动跟踪优化 -->
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <!-- Release模式下的额外优化 -->
+    <Optimize>true</Optimize>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    
+    <!-- 启动性能优化 -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <CrossGenDuringPublish>true</CrossGenDuringPublish>
+    <OptimizationPreference>Speed</OptimizationPreference>
+  </PropertyGroup>
+
+  <!-- 快速启动配置 -->
+  <PropertyGroup Condition="'$(PublishProfile)'=='FastStartup'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.10" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="System.Net.WebSockets.Client" Version="4.3.2" />
+    <PackageReference Include="Microsoft.ClearScript.V8" Version="7.4.5" />
+    <PackageReference Include="Microsoft.ClearScript.V8.Native.win-x64" Version="7.4.5" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="sign.js" />
+  </ItemGroup>
+
+  <!-- 排除不必要的文件 -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="DouyinDanmu" />
+    <TrimmerRootAssembly Include="Microsoft.ClearScript.V8" />
+    <TrimmerRootAssembly Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <!-- 启动性能分析支持 -->
+  <ItemGroup Condition="'$(Configuration)'=='Release'">
+    <RuntimeHostConfigurationOption Include="System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization" Value="false" />
+    <RuntimeHostConfigurationOption Include="System.Globalization.Invariant" Value="false" />
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.MinThreads" Value="4" />
+    <RuntimeHostConfigurationOption Include="System.GC.Server" Value="false" />
+    <RuntimeHostConfigurationOption Include="System.GC.Concurrent" Value="true" />
   </ItemGroup>
 
 </Project>

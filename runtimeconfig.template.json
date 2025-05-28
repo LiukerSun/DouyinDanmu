@@ -1,0 +1,20 @@
+{
+  "runtimeOptions": {
+    "configProperties": {
+      "System.GC.Server": false,
+      "System.GC.Concurrent": true,
+      "System.GC.RetainVM": true,
+      "System.Threading.ThreadPool.MinThreads": 4,
+      "System.Threading.ThreadPool.MaxThreads": 32,
+      "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
+      "System.Globalization.Invariant": false,
+      "Microsoft.AspNetCore.Server.Kestrel.DisableStringReuse": false,
+      "System.Net.SocketsHttpHandler.Http2Support": true,
+      "System.Net.SocketsHttpHandler.Http3Support": false
+    },
+    "framework": {
+      "name": "Microsoft.WindowsDesktop.App",
+      "version": "8.0.0"
+    }
+  }
+} 

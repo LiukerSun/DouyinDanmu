@@ -602,7 +602,7 @@ partial class Form1
         this.MinimumSize = new System.Drawing.Size(1616, 635);
         this.Name = "Form1";
         this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-        this.Text = "抖音直播弹幕抓取器 v1.0";
+        this.Text = "抖音直播弹幕抓取器 v1.3.0";
         this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Form1_FormClosing);
         this.groupBoxConnection.ResumeLayout(false);
         this.groupBoxConnection.PerformLayout();

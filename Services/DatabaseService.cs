@@ -357,6 +357,36 @@ namespace DouyinDanmu.Services
         }
 
         /// <summary>
+        /// 根据用户ID查询用户昵称
+        /// </summary>
+        public async Task<string?> GetUserNicknameAsync(string userId)
+        {
+            if (_connection == null || string.IsNullOrEmpty(userId)) return null;
+
+            // 从三个表中查询用户昵称，优先使用最新的记录
+            var queries = new[]
+            {
+                "SELECT user_name FROM chat_messages WHERE user_id = @userId AND user_name != '' ORDER BY timestamp DESC LIMIT 1",
+                "SELECT user_name FROM member_messages WHERE user_id = @userId AND user_name != '' ORDER BY timestamp DESC LIMIT 1",
+                "SELECT user_name FROM interaction_messages WHERE user_id = @userId AND user_name != '' ORDER BY timestamp DESC LIMIT 1"
+            };
+
+            foreach (var query in queries)
+            {
+                using var command = new SqliteCommand(query, _connection);
+                command.Parameters.AddWithValue("@userId", userId);
+                
+                var result = await command.ExecuteScalarAsync();
+                if (result != null && !string.IsNullOrEmpty(result.ToString()))
+                {
+                    return result.ToString();
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// 获取数据库文件路径
         /// </summary>
         public string GetDatabasePath()

@@ -19,6 +19,8 @@ namespace DouyinDanmu
             this.listBoxUserIds = new System.Windows.Forms.ListBox();
             this.groupBoxAddUser = new System.Windows.Forms.GroupBox();
             this.buttonAdd = new System.Windows.Forms.Button();
+            this.textBoxNickname = new System.Windows.Forms.TextBox();
+            this.labelNickname = new System.Windows.Forms.Label();
             this.textBoxUserId = new System.Windows.Forms.TextBox();
             this.labelUserId = new System.Windows.Forms.Label();
             this.buttonRemove = new System.Windows.Forms.Button();
@@ -35,7 +37,7 @@ namespace DouyinDanmu
             this.groupBoxWatchedUsers.Controls.Add(this.buttonClear);
             this.groupBoxWatchedUsers.Controls.Add(this.buttonRemove);
             this.groupBoxWatchedUsers.Controls.Add(this.listBoxUserIds);
-            this.groupBoxWatchedUsers.Location = new System.Drawing.Point(12, 80);
+            this.groupBoxWatchedUsers.Location = new System.Drawing.Point(12, 88);
             this.groupBoxWatchedUsers.Name = "groupBoxWatchedUsers";
             this.groupBoxWatchedUsers.Size = new System.Drawing.Size(460, 280);
             this.groupBoxWatchedUsers.TabIndex = 0;
@@ -54,24 +56,45 @@ namespace DouyinDanmu
             // groupBoxAddUser
             // 
             this.groupBoxAddUser.Controls.Add(this.buttonAdd);
+            this.groupBoxAddUser.Controls.Add(this.textBoxNickname);
+            this.groupBoxAddUser.Controls.Add(this.labelNickname);
             this.groupBoxAddUser.Controls.Add(this.textBoxUserId);
             this.groupBoxAddUser.Controls.Add(this.labelUserId);
             this.groupBoxAddUser.Location = new System.Drawing.Point(12, 12);
             this.groupBoxAddUser.Name = "groupBoxAddUser";
-            this.groupBoxAddUser.Size = new System.Drawing.Size(460, 62);
+            this.groupBoxAddUser.Size = new System.Drawing.Size(460, 70);
             this.groupBoxAddUser.TabIndex = 1;
             this.groupBoxAddUser.TabStop = false;
-            this.groupBoxAddUser.Text = "添加用户ID";
+            this.groupBoxAddUser.Text = "添加用户";
             // 
             // buttonAdd
             // 
-            this.buttonAdd.Location = new System.Drawing.Point(370, 25);
+            this.buttonAdd.Location = new System.Drawing.Point(370, 27);
             this.buttonAdd.Name = "buttonAdd";
             this.buttonAdd.Size = new System.Drawing.Size(75, 25);
-            this.buttonAdd.TabIndex = 2;
+            this.buttonAdd.TabIndex = 4;
             this.buttonAdd.Text = "添加";
             this.buttonAdd.UseVisualStyleBackColor = true;
             this.buttonAdd.Click += new System.EventHandler(this.buttonAdd_Click);
+            // 
+            // textBoxNickname
+            // 
+            this.textBoxNickname.Location = new System.Drawing.Point(80, 62);
+            this.textBoxNickname.Name = "textBoxNickname";
+            this.textBoxNickname.Size = new System.Drawing.Size(280, 23);
+            this.textBoxNickname.TabIndex = 3;
+            this.textBoxNickname.Visible = false;
+            this.textBoxNickname.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.textBoxNickname_KeyPress);
+            // 
+            // labelNickname
+            // 
+            this.labelNickname.AutoSize = true;
+            this.labelNickname.Location = new System.Drawing.Point(15, 65);
+            this.labelNickname.Name = "labelNickname";
+            this.labelNickname.Size = new System.Drawing.Size(59, 17);
+            this.labelNickname.TabIndex = 2;
+            this.labelNickname.Text = "用户昵称:";
+            this.labelNickname.Visible = false;
             // 
             // textBoxUserId
             // 
@@ -112,7 +135,7 @@ namespace DouyinDanmu
             // 
             // buttonOK
             // 
-            this.buttonOK.Location = new System.Drawing.Point(312, 380);
+            this.buttonOK.Location = new System.Drawing.Point(312, 385);
             this.buttonOK.Name = "buttonOK";
             this.buttonOK.Size = new System.Drawing.Size(75, 30);
             this.buttonOK.TabIndex = 2;
@@ -122,7 +145,7 @@ namespace DouyinDanmu
             // 
             // buttonCancel
             // 
-            this.buttonCancel.Location = new System.Drawing.Point(397, 380);
+            this.buttonCancel.Location = new System.Drawing.Point(397, 385);
             this.buttonCancel.Name = "buttonCancel";
             this.buttonCancel.Size = new System.Drawing.Size(75, 30);
             this.buttonCancel.TabIndex = 3;
@@ -134,18 +157,18 @@ namespace DouyinDanmu
             // 
             this.labelDescription.AutoSize = true;
             this.labelDescription.ForeColor = System.Drawing.SystemColors.GrayText;
-            this.labelDescription.Location = new System.Drawing.Point(12, 385);
+            this.labelDescription.Location = new System.Drawing.Point(12, 390);
             this.labelDescription.Name = "labelDescription";
-            this.labelDescription.Size = new System.Drawing.Size(180, 17);
+            this.labelDescription.Size = new System.Drawing.Size(240, 17);
             this.labelDescription.TabIndex = 4;
-            this.labelDescription.Text = "提示：添加的用户消息将单独显示";
+            this.labelDescription.Text = "提示：输入用户ID后会自动从数据库查找昵称";
             this.labelDescription.Click += new System.EventHandler(this.labelDescription_Click);
             // 
             // SettingsForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(484, 422);
+            this.ClientSize = new System.Drawing.Size(484, 430);
             this.Controls.Add(this.labelDescription);
             this.Controls.Add(this.buttonCancel);
             this.Controls.Add(this.buttonOK);
@@ -170,6 +193,8 @@ namespace DouyinDanmu
         private System.Windows.Forms.ListBox listBoxUserIds;
         private System.Windows.Forms.GroupBox groupBoxAddUser;
         private System.Windows.Forms.Button buttonAdd;
+        private System.Windows.Forms.TextBox textBoxNickname;
+        private System.Windows.Forms.Label labelNickname;
         private System.Windows.Forms.TextBox textBoxUserId;
         private System.Windows.Forms.Label labelUserId;
         private System.Windows.Forms.Button buttonRemove;

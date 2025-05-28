@@ -197,6 +197,16 @@ namespace DouyinDanmu
                 _watchedUserIds = new List<string>(_appSettings.WatchedUserIds);
                 checkBoxAutoScroll.Checked = _appSettings.AutoScroll;
                 
+                // 修复：如果WatchedUserIds为空但UserInfos有数据，从UserInfos恢复WatchedUserIds
+                if (_watchedUserIds.Count == 0 && _appSettings.UserInfos != null && _appSettings.UserInfos.Count > 0)
+                {
+                    _watchedUserIds = new List<string>(_appSettings.UserInfos.Keys);
+                    UpdateStatus($"从用户信息中恢复了 {_watchedUserIds.Count} 个关注用户");
+                    
+                    // 立即保存修复后的设置
+                    SaveSettings();
+                }
+                
                 // 应用窗口设置
                 if (_appSettings.WindowX >= 0 && _appSettings.WindowY >= 0)
                 {
@@ -212,7 +222,8 @@ namespace DouyinDanmu
                 }
                 
                 var settingsPath = SettingsManager.GetSettingsFilePath();
-                UpdateStatus($"已加载设置，关注用户: {_watchedUserIds.Count}个 | 设置文件: {settingsPath}");
+                var settingsInfo = SettingsManager.GetSettingsFileInfo();
+                UpdateStatus($"已加载设置，关注用户: {_watchedUserIds.Count}个 | 设置文件: {settingsInfo}");
             }
             catch (Exception ex)
             {
@@ -242,7 +253,12 @@ namespace DouyinDanmu
                 }
                 _appSettings.WindowState = (int)this.WindowState;
                 
-                SettingsManager.SaveSettings(_appSettings);
+                // 使用改进的SaveSettings方法
+                bool success = SettingsManager.SaveSettings(_appSettings);
+                if (!success)
+                {
+                    UpdateStatus($"保存设置失败，请检查文件权限");
+                }
             }
             catch (Exception ex)
             {
@@ -699,15 +715,8 @@ namespace DouyinDanmu
             };
             item.SubItems.Add(messageType);
             
-            // 用户名处理 - 确保显示用户名而不是空值
-            string displayUserName = message.UserName;
-            if (string.IsNullOrEmpty(displayUserName))
-            {
-                // 如果用户名为空，尝试使用用户ID作为显示名
-                displayUserName = !string.IsNullOrEmpty(message.UserId) && message.UserId != "111111" 
-                    ? $"用户{message.UserId}" 
-                    : "匿名用户";
-            }
+            // 用户名处理 - 优先使用保存的昵称信息
+            string displayUserName = GetDisplayUserName(message.UserId, message.UserName);
             item.SubItems.Add(displayUserName);
             
             item.SubItems.Add(FormatUserId(message.UserId));
@@ -754,15 +763,8 @@ namespace DouyinDanmu
             };
             item.SubItems.Add(messageType);
             
-            // 用户名处理 - 确保显示用户名而不是空值
-            string displayUserName = message.UserName;
-            if (string.IsNullOrEmpty(displayUserName))
-            {
-                // 如果用户名为空，尝试使用用户ID作为显示名
-                displayUserName = !string.IsNullOrEmpty(message.UserId) && message.UserId != "111111" 
-                    ? $"用户{message.UserId}" 
-                    : "匿名用户";
-            }
+            // 用户名处理 - 优先使用保存的昵称信息
+            string displayUserName = GetDisplayUserName(message.UserId, message.UserName);
             item.SubItems.Add(displayUserName);
             
             item.SubItems.Add(FormatUserId(message.UserId));
@@ -785,6 +787,45 @@ namespace DouyinDanmu
             
             // 添加调试信息
             Console.WriteLine($"关注用户消息: 用户名='{message.UserName}' 显示名='{displayUserName}' 用户ID='{message.UserId}' 类型={message.Type}");
+        }
+
+        /// <summary>
+        /// 获取用户显示名称，优先使用保存的昵称
+        /// </summary>
+        private string GetDisplayUserName(string? userId, string? originalUserName)
+        {
+            // 如果用户ID为空或无效，使用原始用户名或默认值
+            if (string.IsNullOrEmpty(userId) || userId == "111111")
+            {
+                return string.IsNullOrEmpty(originalUserName) ? "匿名用户" : originalUserName;
+            }
+
+            // 检查是否有保存的用户信息
+            if (_appSettings.UserInfos != null && _appSettings.UserInfos.ContainsKey(userId))
+            {
+                var userInfo = _appSettings.UserInfos[userId];
+                if (!string.IsNullOrEmpty(userInfo.Nickname))
+                {
+                    // 如果有保存的昵称，使用格式：昵称 (原始用户名)
+                    if (!string.IsNullOrEmpty(originalUserName) && originalUserName != userInfo.Nickname)
+                    {
+                        return $"{userInfo.Nickname} ({originalUserName})";
+                    }
+                    else
+                    {
+                        return userInfo.Nickname;
+                    }
+                }
+            }
+
+            // 如果没有保存的昵称，使用原始用户名
+            if (!string.IsNullOrEmpty(originalUserName))
+            {
+                return originalUserName;
+            }
+
+            // 最后的备选方案
+            return $"用户{userId}";
         }
 
         /// <summary>
@@ -1082,10 +1123,11 @@ namespace DouyinDanmu
         /// </summary>
         private void buttonSettings_Click(object sender, EventArgs e)
         {
-            using var settingsForm = new SettingsForm(_watchedUserIds);
+            using var settingsForm = new SettingsForm(_watchedUserIds, _appSettings.UserInfos, _databaseService);
             if (settingsForm.ShowDialog() == DialogResult.OK)
             {
                 _watchedUserIds = settingsForm.WatchedUserIds;
+                _appSettings.UserInfos = settingsForm.UserInfos;
                 UpdateStatus($"已更新关注用户列表，共{_watchedUserIds.Count}个用户");
                 
                 // 自动保存设置
@@ -1244,6 +1286,32 @@ namespace DouyinDanmu
                     if (!_watchedUserIds.Contains(userId))
                     {
                         _watchedUserIds.Add(userId);
+                        
+                        // 同时保存用户信息到UserInfos
+                        if (!string.IsNullOrEmpty(userName) && userName != "-")
+                        {
+                            if (_appSettings.UserInfos == null)
+                            {
+                                _appSettings.UserInfos = new Dictionary<string, UserInfo>();
+                            }
+                            
+                            // 如果用户信息不存在，创建新的用户信息
+                            if (!_appSettings.UserInfos.ContainsKey(userId))
+                            {
+                                _appSettings.UserInfos[userId] = new UserInfo(userId, userName);
+                            }
+                            else
+                            {
+                                // 如果已存在但昵称为空，更新昵称
+                                var existingUserInfo = _appSettings.UserInfos[userId];
+                                if (string.IsNullOrEmpty(existingUserInfo.Nickname))
+                                {
+                                    existingUserInfo.Nickname = userName;
+                                    existingUserInfo.LastUpdated = DateTime.Now;
+                                }
+                            }
+                        }
+                        
                         SaveSettings();
                         UpdateStatus($"已将用户 {userName} (ID: {userId}) 添加到关注列表");
                     }

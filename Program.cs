@@ -9,8 +9,22 @@ static class Program
     ///  The main entry point for the application.
     /// </summary>
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
+        // 检查是否是测试模式
+        if (args.Length > 0 && args[0] == "--test-settings")
+        {
+            TestSettingsRecovery.RunTest();
+            return;
+        }
+        
+        // 检查是否是修复模式
+        if (args.Length > 0 && args[0] == "--fix-settings")
+        {
+            SettingsFixTool.FixSettings();
+            return;
+        }
+        
         try
         {
             // 在启动应用程序前测试 SQLite

@@ -19,21 +19,28 @@ namespace DouyinDanmu
     public partial class SettingsForm : Form
     {
         public List<string> WatchedUserIds { get; private set; }
+        public Dictionary<string, UserInfo> UserInfos { get; private set; }
         private Dictionary<string, UserInfo> _userInfoCache;
         private readonly HttpClient _httpClient;
+        private readonly DatabaseService? _databaseService;
 
-        public SettingsForm(List<string> currentUserIds)
+        public SettingsForm(List<string> currentUserIds, Dictionary<string, UserInfo>? userInfos = null, DatabaseService? databaseService = null)
         {
             InitializeComponent();
             WatchedUserIds = new List<string>(currentUserIds);
-            _userInfoCache = new Dictionary<string, UserInfo>();
+            UserInfos = userInfos != null ? new Dictionary<string, UserInfo>(userInfos) : new Dictionary<string, UserInfo>();
+            _userInfoCache = new Dictionary<string, UserInfo>(UserInfos);
             _httpClient = new HttpClient();
+            _databaseService = databaseService;
             
             LoadUserIds();
             
+            // 添加双击事件处理
+            listBoxUserIds.DoubleClick += ListBoxUserIds_DoubleClick;
+            
             // 更新描述标签，显示设置文件位置
             var settingsPath = SettingsManager.GetSettingsFilePath();
-            labelDescription.Text = $"提示：设置自动保存到 {Path.GetFileName(settingsPath)} (点击查看路径)";
+            labelDescription.Text = $"打开配置文件文件夹";
         }
 
         private void LoadUserIds()
@@ -53,11 +60,26 @@ namespace DouyinDanmu
                 return _userInfoCache[userId];
             }
 
-            var userInfo = new UserInfo(userId);
+            // 首先检查是否有已保存的用户信息
+            UserInfo userInfo;
+            if (UserInfos.ContainsKey(userId))
+            {
+                // 使用已保存的用户信息
+                userInfo = new UserInfo(userId, UserInfos[userId].Nickname);
+            }
+            else
+            {
+                // 创建新的用户信息
+                userInfo = new UserInfo(userId);
+            }
+            
             _userInfoCache[userId] = userInfo;
             
-            // 异步获取用户昵称
-            _ = Task.Run(async () => await FetchUserNicknameAsync(userId));
+            // 异步获取用户昵称（如果当前没有昵称）
+            if (string.IsNullOrEmpty(userInfo.Nickname))
+            {
+                _ = Task.Run(async () => await FetchUserNicknameAsync(userId));
+            }
             
             return userInfo;
         }
@@ -66,20 +88,22 @@ namespace DouyinDanmu
         {
             try
             {
-                // 这里可以调用抖音API获取用户信息
-                // 由于抖音API需要认证，这里先使用简化的方式
-                // 实际项目中可以集成真实的API调用
+                string? nickname = null;
                 
-                await Task.Delay(100); // 模拟网络延迟
+                // 首先尝试从数据库获取用户昵称
+                if (_databaseService != null)
+                {
+                    nickname = await _databaseService.GetUserNicknameAsync(userId);
+                }
                 
                 // 更新UI需要在主线程执行
                 this.Invoke(new Action(() =>
                 {
-                    if (_userInfoCache.ContainsKey(userId))
+                    if (_userInfoCache.ContainsKey(userId) && !string.IsNullOrEmpty(nickname))
                     {
-                        // 这里可以设置真实的昵称
-                        // _userInfoCache[userId].Nickname = "获取到的昵称";
-                        // RefreshUserList();
+                        _userInfoCache[userId].Nickname = nickname;
+                        _userInfoCache[userId].LastUpdated = DateTime.Now;
+                        RefreshUserList();
                     }
                 }));
             }
@@ -110,6 +134,7 @@ namespace DouyinDanmu
         private async void buttonAdd_Click(object sender, EventArgs e)
         {
             var userId = textBoxUserId.Text.Trim();
+            
             if (string.IsNullOrEmpty(userId))
             {
                 MessageBox.Show("请输入用户ID", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -124,23 +149,138 @@ namespace DouyinDanmu
 
             // 禁用添加按钮，显示加载状态
             buttonAdd.Enabled = false;
-            buttonAdd.Text = "添加中...";
+            buttonAdd.Text = "查询中...";
 
             try
             {
+                string? nickname = null;
+                
+                // 首先尝试从数据库获取用户昵称
+                if (_databaseService != null)
+                {
+                    nickname = await _databaseService.GetUserNicknameAsync(userId);
+                }
+                
+                // 如果数据库中没有找到昵称，询问用户是否要手动输入
+                if (string.IsNullOrEmpty(nickname))
+                {
+                    var result = MessageBox.Show(
+                        $"数据库中未找到用户ID '{userId}' 的昵称信息。\n\n是否要手动输入昵称？\n\n点击'是'手动输入昵称\n点击'否'仅使用用户ID",
+                        "未找到昵称",
+                        MessageBoxButtons.YesNoCancel,
+                        MessageBoxIcon.Question);
+                    
+                    if (result == DialogResult.Cancel)
+                    {
+                        return; // 用户取消操作
+                    }
+                    else if (result == DialogResult.Yes)
+                    {
+                        // 弹出输入框让用户手动输入昵称
+                        nickname = ShowNicknameInputDialog(userId);
+                        if (nickname == null) // 用户取消了输入
+                        {
+                            return;
+                        }
+                    }
+                    // 如果选择'否'，nickname保持为null，只使用用户ID
+                }
+
+                // 添加用户
                 WatchedUserIds.Add(userId);
-                var userInfo = GetUserInfo(userId);
+                
+                // 创建用户信息
+                var userInfo = new UserInfo(userId, nickname ?? "");
+                _userInfoCache[userId] = userInfo;
+                
                 listBoxUserIds.Items.Add(userInfo);
                 textBoxUserId.Clear();
+                textBoxNickname.Clear();
                 
-                // 尝试获取用户昵称
-                await FetchUserNicknameAsync(userId);
+                // 显示结果
+                if (!string.IsNullOrEmpty(nickname))
+                {
+                    UpdateStatus($"已添加用户: {nickname} (ID: {userId})");
+                }
+                else
+                {
+                    UpdateStatus($"已添加用户: {userId}");
+                }
             }
             finally
             {
                 buttonAdd.Enabled = true;
                 buttonAdd.Text = "添加";
             }
+        }
+
+        /// <summary>
+        /// 显示昵称输入对话框
+        /// </summary>
+        private string? ShowNicknameInputDialog(string userId)
+        {
+            using (var inputForm = new Form())
+            {
+                inputForm.Text = "输入用户昵称";
+                inputForm.Size = new Size(400, 150);
+                inputForm.StartPosition = FormStartPosition.CenterParent;
+                inputForm.FormBorderStyle = FormBorderStyle.FixedDialog;
+                inputForm.MaximizeBox = false;
+                inputForm.MinimizeBox = false;
+
+                var label = new Label()
+                {
+                    Text = $"用户ID: {userId}",
+                    Location = new Point(15, 15),
+                    Size = new Size(350, 20)
+                };
+
+                var textBox = new TextBox()
+                {
+                    Location = new Point(15, 45),
+                    Size = new Size(350, 23),
+                    PlaceholderText = "请输入用户昵称"
+                };
+
+                var buttonOK = new Button()
+                {
+                    Text = "确定",
+                    Location = new Point(220, 80),
+                    Size = new Size(75, 25),
+                    DialogResult = DialogResult.OK
+                };
+
+                var buttonCancel = new Button()
+                {
+                    Text = "取消",
+                    Location = new Point(305, 80),
+                    Size = new Size(75, 25),
+                    DialogResult = DialogResult.Cancel
+                };
+
+                inputForm.Controls.AddRange(new Control[] { label, textBox, buttonOK, buttonCancel });
+                inputForm.AcceptButton = buttonOK;
+                inputForm.CancelButton = buttonCancel;
+
+                textBox.Focus();
+
+                if (inputForm.ShowDialog() == DialogResult.OK)
+                {
+                    return textBox.Text.Trim();
+                }
+                
+                return null; // 用户取消了输入
+            }
+        }
+
+        /// <summary>
+        /// 更新状态信息（如果父窗体有UpdateStatus方法）
+        /// </summary>
+        private void UpdateStatus(string message)
+        {
+            // 这里可以添加状态更新逻辑，比如在窗体底部显示状态
+            // 暂时使用Debug输出
+            Debug.WriteLine($"[SettingsForm] {message}");
         }
 
         private void buttonRemove_Click(object sender, EventArgs e)
@@ -171,6 +311,13 @@ namespace DouyinDanmu
 
         private void buttonOK_Click(object sender, EventArgs e)
         {
+            // 保存用户信息到UserInfos
+            UserInfos.Clear();
+            foreach (var kvp in _userInfoCache)
+            {
+                UserInfos[kvp.Key] = kvp.Value;
+            }
+            
             this.DialogResult = DialogResult.OK;
             this.Close();
         }
@@ -187,6 +334,90 @@ namespace DouyinDanmu
             {
                 buttonAdd_Click(sender, e);
                 e.Handled = true;
+            }
+        }
+
+        private void textBoxNickname_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            if (e.KeyChar == (char)Keys.Enter)
+            {
+                buttonAdd_Click(sender, e);
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>
+        /// 双击列表项编辑昵称
+        /// </summary>
+        private void ListBoxUserIds_DoubleClick(object? sender, EventArgs e)
+        {
+            if (listBoxUserIds.SelectedItem == null)
+                return;
+
+            var selectedUserInfo = (UserInfo)listBoxUserIds.SelectedItem;
+            var userId = selectedUserInfo.UserId;
+            var currentNickname = selectedUserInfo.Nickname;
+
+            // 创建简单的输入对话框
+            using (var inputForm = new Form())
+            {
+                inputForm.Text = "编辑用户昵称";
+                inputForm.Size = new Size(400, 150);
+                inputForm.StartPosition = FormStartPosition.CenterParent;
+                inputForm.FormBorderStyle = FormBorderStyle.FixedDialog;
+                inputForm.MaximizeBox = false;
+                inputForm.MinimizeBox = false;
+
+                var label = new Label()
+                {
+                    Text = $"用户ID: {userId}",
+                    Location = new Point(15, 15),
+                    Size = new Size(350, 20)
+                };
+
+                var textBox = new TextBox()
+                {
+                    Text = currentNickname,
+                    Location = new Point(15, 45),
+                    Size = new Size(350, 23),
+                    PlaceholderText = "请输入用户昵称（可为空）"
+                };
+
+                var buttonOK = new Button()
+                {
+                    Text = "确定",
+                    Location = new Point(220, 80),
+                    Size = new Size(75, 25),
+                    DialogResult = DialogResult.OK
+                };
+
+                var buttonCancel = new Button()
+                {
+                    Text = "取消",
+                    Location = new Point(305, 80),
+                    Size = new Size(75, 25),
+                    DialogResult = DialogResult.Cancel
+                };
+
+                inputForm.Controls.AddRange(new Control[] { label, textBox, buttonOK, buttonCancel });
+                inputForm.AcceptButton = buttonOK;
+                inputForm.CancelButton = buttonCancel;
+
+                // 选中文本框内容
+                textBox.SelectAll();
+                textBox.Focus();
+
+                if (inputForm.ShowDialog() == DialogResult.OK)
+                {
+                    var newNickname = textBox.Text.Trim();
+                    
+                    // 更新用户信息
+                    selectedUserInfo.Nickname = newNickname;
+                    selectedUserInfo.LastUpdated = DateTime.Now;
+                    
+                    // 刷新列表显示
+                    RefreshUserList();
+                }
             }
         }
 

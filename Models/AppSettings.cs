@@ -18,6 +18,11 @@ namespace DouyinDanmu.Models
         public List<string> WatchedUserIds { get; set; } = new List<string>();
 
         /// <summary>
+        /// 用户信息字典（用户ID -> 用户信息）
+        /// </summary>
+        public Dictionary<string, UserInfo> UserInfos { get; set; } = new Dictionary<string, UserInfo>();
+
+        /// <summary>
         /// 窗口位置X
         /// </summary>
         public int WindowX { get; set; } = -1;

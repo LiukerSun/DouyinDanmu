@@ -34,15 +34,15 @@ namespace DouyinDanmu.Models
         }
 
         /// <summary>
-        /// 显示格式：昵称 (ID)
+        /// 显示格式：昵称 (ID) 或 用户ID: XXXXX
         /// </summary>
         public override string ToString()
         {
             if (string.IsNullOrEmpty(Nickname))
             {
-                return UserId;
+                return $"用户ID: {UserId}";
             }
-            return $"{Nickname} ({UserId})";
+            return $"{Nickname} (ID: {UserId})";
         }
 
         /// <summary>

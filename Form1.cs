@@ -7,6 +7,7 @@ using System.Windows.Forms;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Drawing;
 
 namespace DouyinDanmu
 {
@@ -18,9 +19,30 @@ namespace DouyinDanmu
         private AppSettings _appSettings = new AppSettings();
         private DatabaseService? _databaseService;
 
+        // 批量更新相关字段
+        private readonly System.Windows.Forms.Timer _updateTimer;
+        private readonly Queue<LiveMessage> _pendingMessages = new Queue<LiveMessage>();
+        private readonly object _pendingMessagesLock = new object();
+        private bool _statisticsNeedUpdate = false;
+
         public Form1()
         {
             InitializeComponent();
+            
+            // 启用双缓冲以减少闪烁
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.DoubleBuffer, true);
+            
+            // 为所有ListView启用双缓冲
+            EnableListViewDoubleBuffering(listViewChat);
+            EnableListViewDoubleBuffering(listViewMember);
+            EnableListViewDoubleBuffering(listViewGiftFollow);
+            EnableListViewDoubleBuffering(listViewWatchedUsers);
+            
+            // 初始化批量更新定时器
+            _updateTimer = new System.Windows.Forms.Timer();
+            _updateTimer.Interval = 100; // 100ms批量更新一次
+            _updateTimer.Tick += UpdateTimer_Tick;
+            _updateTimer.Start();
             
             // 加载设置
             LoadSettings();
@@ -36,6 +58,129 @@ namespace DouyinDanmu
             
             // 初始化布局
             AdjustLayout();
+        }
+
+        /// <summary>
+        /// 为ListView启用双缓冲
+        /// </summary>
+        private void EnableListViewDoubleBuffering(ListView listView)
+        {
+            typeof(ListView).InvokeMember("DoubleBuffered",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.SetProperty,
+                null, listView, new object[] { true });
+        }
+
+        /// <summary>
+        /// 批量更新定时器事件
+        /// </summary>
+        private void UpdateTimer_Tick(object? sender, EventArgs e)
+        {
+            ProcessPendingMessages();
+            
+            if (_statisticsNeedUpdate)
+            {
+                UpdateStatistics();
+                _statisticsNeedUpdate = false;
+            }
+        }
+
+        /// <summary>
+        /// 处理待处理的消息队列
+        /// </summary>
+        private void ProcessPendingMessages()
+        {
+            List<LiveMessage> messagesToProcess = new List<LiveMessage>();
+            
+            lock (_pendingMessagesLock)
+            {
+                // 一次性处理所有待处理的消息，但限制数量避免UI卡顿
+                int maxProcessCount = Math.Min(_pendingMessages.Count, 50);
+                for (int i = 0; i < maxProcessCount; i++)
+                {
+                    if (_pendingMessages.Count > 0)
+                    {
+                        messagesToProcess.Add(_pendingMessages.Dequeue());
+                    }
+                }
+            }
+
+            if (messagesToProcess.Count == 0) return;
+
+            // 暂停ListView的重绘
+            listViewChat.BeginUpdate();
+            listViewMember.BeginUpdate();
+            listViewGiftFollow.BeginUpdate();
+            listViewWatchedUsers.BeginUpdate();
+
+            try
+            {
+                foreach (var message in messagesToProcess)
+                {
+                    ProcessSingleMessage(message);
+                }
+                
+                _statisticsNeedUpdate = true;
+            }
+            finally
+            {
+                // 恢复ListView的重绘
+                listViewChat.EndUpdate();
+                listViewMember.EndUpdate();
+                listViewGiftFollow.EndUpdate();
+                listViewWatchedUsers.EndUpdate();
+                
+                // 批量处理自动滚动
+                if (checkBoxAutoScroll.Checked)
+                {
+                    PerformAutoScroll();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 处理单个消息（不触发重绘）
+        /// </summary>
+        private void ProcessSingleMessage(LiveMessage message)
+        {
+            // 检查是否为关注的用户
+            bool isWatchedUser = !string.IsNullOrEmpty(message.UserId) && _watchedUserIds.Contains(message.UserId);
+
+            // 如果是关注的用户，添加到关注用户列表
+            if (isWatchedUser)
+            {
+                AddWatchedUserMessageInternal(message);
+            }
+
+            // 根据消息类型添加到对应的ListView
+            switch (message.Type)
+            {
+                case LiveMessageType.Chat:
+                    AddChatMessageInternal(message);
+                    break;
+                case LiveMessageType.Member:
+                    AddMemberMessageInternal(message);
+                    break;
+                case LiveMessageType.Gift:
+                case LiveMessageType.Like:
+                case LiveMessageType.Social:
+                    AddGiftFollowMessageInternal(message);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// 批量执行自动滚动
+        /// </summary>
+        private void PerformAutoScroll()
+        {
+            if (listViewChat.Items.Count > 0)
+                listViewChat.EnsureVisible(listViewChat.Items.Count - 1);
+            if (listViewMember.Items.Count > 0)
+                listViewMember.EnsureVisible(listViewMember.Items.Count - 1);
+            if (listViewGiftFollow.Items.Count > 0)
+                listViewGiftFollow.EnsureVisible(listViewGiftFollow.Items.Count - 1);
+            if (listViewWatchedUsers.Items.Count > 0)
+                listViewWatchedUsers.EnsureVisible(listViewWatchedUsers.Items.Count - 1);
         }
 
         /// <summary>
@@ -348,36 +493,11 @@ namespace DouyinDanmu
             // 异步保存到数据库
             _ = SaveMessageToDatabaseAsync(message);
 
-            // 检查是否为关注的用户
-            bool isWatchedUser = !string.IsNullOrEmpty(message.UserId) && _watchedUserIds.Contains(message.UserId);
-
-            // 如果是关注的用户，添加到关注用户列表
-            if (isWatchedUser)
+            // 将消息加入待处理队列，由定时器批量处理
+            lock (_pendingMessagesLock)
             {
-                AddWatchedUserMessage(message);
+                _pendingMessages.Enqueue(message);
             }
-
-            // 根据消息类型添加到对应的ListView
-            switch (message.Type)
-            {
-                case LiveMessageType.Chat:
-                    AddChatMessage(message);
-                    break;
-                case LiveMessageType.Member:
-                    AddMemberMessage(message);
-                    break;
-                case LiveMessageType.Gift:
-                case LiveMessageType.Like:
-                case LiveMessageType.Social:
-                    AddGiftFollowMessage(message);
-                    break;
-                default:
-                    // 其他类型的消息暂时不显示
-                    break;
-            }
-
-            // 更新统计信息
-            UpdateStatistics();
         }
 
         /// <summary>
@@ -436,6 +556,21 @@ namespace DouyinDanmu
         }
 
         /// <summary>
+        /// 添加聊天消息（内部方法，不触发重绘）
+        /// </summary>
+        private void AddChatMessageInternal(LiveMessage message)
+        {
+            var item = new ListViewItem(message.Timestamp.ToString("HH:mm:ss"));
+            item.SubItems.Add(message.UserName ?? "");
+            item.SubItems.Add(FormatUserId(message.UserId));
+            item.SubItems.Add(message.FansClubLevel > 0 ? message.FansClubLevel.ToString() : "-");
+            item.SubItems.Add(message.PayGradeLevel > 0 ? message.PayGradeLevel.ToString() : "-");
+            item.SubItems.Add(message.Content ?? "");
+
+            listViewChat.Items.Add(item);
+        }
+
+        /// <summary>
         /// 添加进场消息
         /// </summary>
         private void AddMemberMessage(LiveMessage message)
@@ -454,6 +589,21 @@ namespace DouyinDanmu
             {
                 listViewMember.EnsureVisible(listViewMember.Items.Count - 1);
             }
+        }
+
+        /// <summary>
+        /// 添加进场消息（内部方法，不触发重绘）
+        /// </summary>
+        private void AddMemberMessageInternal(LiveMessage message)
+        {
+            var item = new ListViewItem(message.Timestamp.ToString("HH:mm:ss"));
+            item.SubItems.Add(message.UserName ?? "");
+            item.SubItems.Add(FormatUserId(message.UserId));
+            item.SubItems.Add(message.FansClubLevel > 0 ? message.FansClubLevel.ToString() : "-");
+            item.SubItems.Add(message.PayGradeLevel > 0 ? message.PayGradeLevel.ToString() : "-");
+            item.SubItems.Add(message.Content ?? "");
+
+            listViewMember.Items.Add(item);
         }
 
         /// <summary>
@@ -497,6 +647,40 @@ namespace DouyinDanmu
         }
 
         /// <summary>
+        /// 添加礼物和关注消息（内部方法，不触发重绘）
+        /// </summary>
+        private void AddGiftFollowMessageInternal(LiveMessage message)
+        {
+            var item = new ListViewItem(message.Timestamp.ToString("HH:mm:ss"));
+            
+            // 类型列
+            string messageType = message.Type switch
+            {
+                LiveMessageType.Gift => "礼物",
+                LiveMessageType.Like => "点赞",
+                LiveMessageType.Social => "关注",
+                _ => "其他"
+            };
+            item.SubItems.Add(messageType);
+            
+            item.SubItems.Add(message.UserName ?? "");
+            item.SubItems.Add(FormatUserId(message.UserId));
+            item.SubItems.Add(message.FansClubLevel > 0 ? message.FansClubLevel.ToString() : "-");
+            item.SubItems.Add(message.PayGradeLevel > 0 ? message.PayGradeLevel.ToString() : "-");
+            
+            // 内容列
+            string content = message.Type switch
+            {
+                LiveMessageType.Gift when message is GiftMessage gift => $"{gift.GiftName} x{gift.GiftCount}",
+                LiveMessageType.Like when message is LikeMessage like => $"点赞 x{like.LikeCount}",
+                _ => message.Content ?? ""
+            };
+            item.SubItems.Add(content);
+
+            listViewGiftFollow.Items.Add(item);
+        }
+
+        /// <summary>
         /// 添加关注用户消息
         /// </summary>
         private void AddWatchedUserMessage(LiveMessage message)
@@ -515,7 +699,17 @@ namespace DouyinDanmu
             };
             item.SubItems.Add(messageType);
             
-            item.SubItems.Add(message.UserName ?? "");
+            // 用户名处理 - 确保显示用户名而不是空值
+            string displayUserName = message.UserName;
+            if (string.IsNullOrEmpty(displayUserName))
+            {
+                // 如果用户名为空，尝试使用用户ID作为显示名
+                displayUserName = !string.IsNullOrEmpty(message.UserId) && message.UserId != "111111" 
+                    ? $"用户{message.UserId}" 
+                    : "匿名用户";
+            }
+            item.SubItems.Add(displayUserName);
+            
             item.SubItems.Add(FormatUserId(message.UserId));
             item.SubItems.Add(message.FansClubLevel > 0 ? message.FansClubLevel.ToString() : "-");
             item.SubItems.Add(message.PayGradeLevel > 0 ? message.PayGradeLevel.ToString() : "-");
@@ -539,6 +733,58 @@ namespace DouyinDanmu
             {
                 listViewWatchedUsers.EnsureVisible(listViewWatchedUsers.Items.Count - 1);
             }
+        }
+
+        /// <summary>
+        /// 添加关注用户消息（内部方法，不触发重绘）
+        /// </summary>
+        private void AddWatchedUserMessageInternal(LiveMessage message)
+        {
+            var item = new ListViewItem(message.Timestamp.ToString("HH:mm:ss"));
+            
+            // 类型列
+            string messageType = message.Type switch
+            {
+                LiveMessageType.Chat => "聊天",
+                LiveMessageType.Gift => "礼物",
+                LiveMessageType.Like => "点赞",
+                LiveMessageType.Member => "进场",
+                LiveMessageType.Social => "关注",
+                _ => "其他"
+            };
+            item.SubItems.Add(messageType);
+            
+            // 用户名处理 - 确保显示用户名而不是空值
+            string displayUserName = message.UserName;
+            if (string.IsNullOrEmpty(displayUserName))
+            {
+                // 如果用户名为空，尝试使用用户ID作为显示名
+                displayUserName = !string.IsNullOrEmpty(message.UserId) && message.UserId != "111111" 
+                    ? $"用户{message.UserId}" 
+                    : "匿名用户";
+            }
+            item.SubItems.Add(displayUserName);
+            
+            item.SubItems.Add(FormatUserId(message.UserId));
+            item.SubItems.Add(message.FansClubLevel > 0 ? message.FansClubLevel.ToString() : "-");
+            item.SubItems.Add(message.PayGradeLevel > 0 ? message.PayGradeLevel.ToString() : "-");
+            
+            // 内容列
+            string content = message.Type switch
+            {
+                LiveMessageType.Chat => message.Content ?? "",
+                LiveMessageType.Gift when message is GiftMessage gift => $"{gift.GiftName} x{gift.GiftCount}",
+                LiveMessageType.Like when message is LikeMessage like => $"点赞 x{like.LikeCount}",
+                LiveMessageType.Member => "进入直播间",
+                LiveMessageType.Social => "关注了主播",
+                _ => message.Content ?? ""
+            };
+            item.SubItems.Add(content);
+
+            listViewWatchedUsers.Items.Add(item);
+            
+            // 添加调试信息
+            Console.WriteLine($"关注用户消息: 用户名='{message.UserName}' 显示名='{displayUserName}' 用户ID='{message.UserId}' 类型={message.Type}");
         }
 
         /// <summary>
@@ -658,6 +904,10 @@ namespace DouyinDanmu
         /// </summary>
         private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
+            // 停止并释放定时器
+            _updateTimer?.Stop();
+            _updateTimer?.Dispose();
+            
             // 保存设置
             SaveSettings();
             

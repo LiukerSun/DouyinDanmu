@@ -6,7 +6,8 @@ echo ========================================
 echo 🚀 快速发布脚本 - 无交互模式
 echo ========================================
 
-cd /d "%~dp0"
+:: 切换到项目根目录 (脚本所在目录的上级目录)
+cd /d "%~dp0\.."
 
 :: 获取版本号 (使用符合.NET规范的格式)
 for /f "tokens=*" %%i in ('powershell -Command "$d=Get-Date; '{0:yy}.{1:MM}.{2:dd}.{3:HHmm}' -f $d,$d,$d,$d"') do set "DOTNET_VERSION=%%i"
@@ -39,7 +40,7 @@ echo 🧹 清理旧文件...
 if exist "bin\Release" rmdir /s /q "bin\Release" >nul 2>&1
 if exist "obj\Release" rmdir /s /q "obj\Release" >nul 2>&1
 
-set "RELEASE_DIR=发布版本\Release-%VERSION%"
+set "RELEASE_DIR=build-scripts\发布版本\Release-%VERSION%"
 if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%" >nul 2>&1
 mkdir "%RELEASE_DIR%" >nul 2>&1
 

@@ -11,8 +11,8 @@ Write-Host "🚀 抖音弹幕工具 - 一键编译打包脚本" -ForegroundColor
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# 切换到脚本目录
-Set-Location $PSScriptRoot
+# 切换到项目根目录 (脚本所在目录的上级目录)
+Set-Location (Split-Path $PSScriptRoot -Parent)
 
 # 获取版本号
 $now = Get-Date
@@ -23,7 +23,7 @@ Write-Host "📅 版本号: $version" -ForegroundColor Yellow
 Write-Host ""
 
 # 创建发布目录
-$releaseDir = "发布版本\Release-$version"
+$releaseDir = "build-scripts\发布版本\Release-$version"
 if (Test-Path $releaseDir) {
     Remove-Item $releaseDir -Recurse -Force
 }
@@ -208,6 +208,8 @@ $releaseNotes = @"
 "@
 
 $releaseNotes | Out-File "$releaseDir\Release-Notes-$version.txt" -Encoding UTF8
+
+# 显示目录结构
 Get-ChildItem $releaseDir | Out-File "$releaseDir\Release-Notes-$version.txt" -Append -Encoding UTF8
 
 Write-Host ""
@@ -217,15 +219,16 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "📁 发布目录: $releaseDir" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "📦 生成的文件:" -ForegroundColor Yellow
+Write-Host "📦 生成的文件:" -ForegroundColor Green
 Get-ChildItem $releaseDir -Name | ForEach-Object { Write-Host "   $_" -ForegroundColor White }
 Write-Host ""
-Write-Host "💡 提示:" -ForegroundColor Cyan
+Write-Host "💡 提示:" -ForegroundColor Yellow
 Write-Host "- 推荐使用 DouyinDanmu-FastStart-$version.zip" -ForegroundColor White
 Write-Host "- 所有版本都已准备好发布到 GitHub Release" -ForegroundColor White
 Write-Host "- 查看 Release-Notes-$version.txt 了解详细信息" -ForegroundColor White
 Write-Host ""
 
+# 询问是否打开发布目录
 if (-not $NoInteraction) {
     $openDir = Read-Host "是否打开发布目录? (y/n)"
     if ($openDir -eq "y" -or $openDir -eq "Y") {

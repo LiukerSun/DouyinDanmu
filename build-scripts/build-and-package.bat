@@ -7,7 +7,8 @@ echo 🚀 抖音弹幕工具 - 一键编译打包脚本
 echo ========================================
 echo.
 
-cd /d "%~dp0"
+:: 切换到项目根目录 (脚本所在目录的上级目录)
+cd /d "%~dp0\.."
 
 :: 获取当前日期和时间作为版本号 (使用符合.NET规范的格式)
 for /f "tokens=*" %%i in ('powershell -Command "$d=Get-Date; '{0:yy}.{1:MM}.{2:dd}.{3:HHmm}' -f $d,$d,$d,$d"') do set "DOTNET_VERSION=%%i"
@@ -39,7 +40,7 @@ echo 📅 .NET版本号: %DOTNET_VERSION%
 echo.
 
 :: 创建发布目录
-set "RELEASE_DIR=发布版本\Release-%VERSION%"
+set "RELEASE_DIR=build-scripts\发布版本\Release-%VERSION%"
 if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
 mkdir "%RELEASE_DIR%"
 
@@ -204,77 +205,44 @@ if %errorlevel% equ 0 (
     echo [4/4] 压缩快速启动版本...
     powershell -Command "Compress-Archive -Path '%FAST_DIR%' -DestinationPath '%RELEASE_DIR%\DouyinDanmu-FastStart-%VERSION%.zip' -Force"
     
-    echo ✅ 所有版本已压缩完成！
+    echo ✅ 所有版本压缩完成！
 ) else (
-    echo ⚠️  PowerShell 不可用，跳过压缩步骤
-    echo 💡 您可以手动压缩各个版本文件夹
+    echo ⚠️ PowerShell 不可用，跳过压缩步骤
+    echo 💡 您可以手动压缩以下目录:
+    echo    - %MINIMAL_DIR%
+    echo    - %SINGLE_DIR%
+    echo    - %TRIMMED_DIR%
+    echo    - %FAST_DIR%
 )
-
-:: 创建发布说明
-echo.
-echo 📝 创建发布说明...
-(
-echo 抖音直播弹幕采集工具 - Release %VERSION%
-echo ========================================
-echo.
-echo 📦 本次发布包含四个版本:
-echo.
-echo 1. DouyinDanmu-Minimal-%VERSION%.zip
-echo    - 最小化版本 ^(需要.NET 8^)
-echo    - 文件大小: 约 5-10 MB
-echo    - 适合: 已安装.NET 8的用户
-echo.
-echo 2. DouyinDanmu-SingleFile-%VERSION%.zip
-echo    - 单文件版本 ^(自包含^)
-echo    - 文件大小: 约 80-120 MB
-echo    - 适合: 希望单文件部署的用户
-echo.
-echo 3. DouyinDanmu-Trimmed-%VERSION%.zip
-echo    - 精简版本 ^(自包含^)
-echo    - 文件大小: 约 40-60 MB
-echo    - 适合: 希望文件较小的用户
-echo.
-echo 4. DouyinDanmu-FastStart-%VERSION%.zip ⚡ 推荐
-echo    - 快速启动版本 ^(自包含^)
-echo    - 文件大小: 约 100-140 MB
-echo    - 适合: 大多数用户 ^(启动最快^)
-echo.
-echo 💡 推荐使用 FastStart 版本，启动速度和性能最佳！
-echo.
-echo 🔧 编译信息:
-echo - 编译时间: %date% %time%
-echo - 目标框架: .NET 8.0
-echo - 目标平台: Windows x64
-echo - 编译配置: Release
-echo.
-echo 📁 文件结构:
-) > "%RELEASE_DIR%\Release-Notes-%VERSION%.txt"
-
-:: 显示目录结构
-dir "%RELEASE_DIR%" >> "%RELEASE_DIR%\Release-Notes-%VERSION%.txt"
 
 echo.
 echo ========================================
 echo 🎉 编译打包完成！
 echo ========================================
 echo.
-echo 📁 发布目录: %RELEASE_DIR%
+echo 📁 输出目录: %RELEASE_DIR%
 echo.
-echo 📦 生成的文件:
-dir "%RELEASE_DIR%" /b
+echo 📦 生成的版本:
 echo.
-echo 💡 提示:
-echo - 推荐使用 DouyinDanmu-FastStart-%VERSION%.zip
-echo - 所有版本都已准备好发布到 GitHub Release
-echo - 查看 Release-Notes-%VERSION%.txt 了解详细信息
+echo 1️⃣ 最小化版本 (DouyinDanmu-Minimal-%VERSION%.zip)
+echo    📏 大小: 约 5-10 MB
+echo    ⚡ 特点: 需要 .NET 8，启动最快
+echo.
+echo 2️⃣ 单文件版本 (DouyinDanmu-SingleFile-%VERSION%.zip)  
+echo    📏 大小: 约 80-120 MB
+echo    ⚡ 特点: 单文件，完全自包含
+echo.
+echo 3️⃣ 精简版本 (DouyinDanmu-Trimmed-%VERSION%.zip)
+echo    📏 大小: 约 40-60 MB  
+echo    ⚡ 特点: 自包含，文件较小
+echo.
+echo 4️⃣ 快速启动版本 (DouyinDanmu-FastStart-%VERSION%.zip) 🌟推荐
+echo    📏 大小: 约 100-140 MB
+echo    ⚡ 特点: 启动最快，性能最佳
+echo.
+echo 🚀 所有版本都可以直接上传到 GitHub Release！
+echo.
+echo 💡 推荐使用快速启动版本，启动速度和运行性能最佳。
 echo.
 
-:: 询问是否打开发布目录
-set /p open_dir=是否打开发布目录? (y/n): 
-if /i "%open_dir%"=="y" (
-    explorer "%RELEASE_DIR%"
-)
-
-echo.
-echo 🚀 发布准备完成！可以上传到 GitHub Release 了！
 pause 

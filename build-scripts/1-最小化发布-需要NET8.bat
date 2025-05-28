@@ -22,7 +22,7 @@ if %errorlevel% neq 0 (
 echo.
 echo 正在整理文件...
 set "publish_dir=bin\Release\net8.0-windows\win-x64\publish"
-set "output_dir=发布版本\最小化版本-需要NET8"
+set "output_dir=build-scripts\发布版本\最小化版本-需要NET8"
 
 if exist "%output_dir%" rmdir /s /q "%output_dir%"
 mkdir "%output_dir%"

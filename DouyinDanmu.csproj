@@ -15,8 +15,8 @@
     <AssemblyCompany>DouyinDanmu</AssemblyCompany>
     <AssemblyProduct>DouyinDanmu</AssemblyProduct>
     <AssemblyCopyright>Copyright © 2024</AssemblyCopyright>
-    <AssemblyVersion>1.4.0.0</AssemblyVersion>
-    <FileVersion>1.4.0.0</FileVersion>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
     
     <!-- 默认配置：框架依赖（最小文件） -->
     <SelfContained>false</SelfContained>
@@ -86,9 +86,8 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.10" />
     
-    <!-- JSON处理 - 使用System.Text.Json替代Newtonsoft.Json以提升性能 -->
+    <!-- JSON处理 - 统一使用System.Text.Json -->
     <PackageReference Include="System.Text.Json" Version="8.0.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     
     <!-- 网络相关 -->
     <PackageReference Include="System.Net.WebSockets.Client" Version="4.3.2" />
@@ -100,6 +99,9 @@
     <!-- 内存管理优化 -->
     <PackageReference Include="System.Memory" Version="4.5.5" />
     <PackageReference Include="System.Buffers" Version="4.5.1" />
+    
+    <!-- 配置验证 -->
+    <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>

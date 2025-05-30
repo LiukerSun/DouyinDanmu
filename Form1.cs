@@ -1004,6 +1004,27 @@ namespace DouyinDanmu
                 if (!isLive)
                 {
                     UpdateStatus("直播间未开播或已结束");
+                    
+                    // 清理资源并重新启用按钮
+                    _fetcher.MessageReceived -= OnMessageReceived;
+                    _fetcher.StatusChanged -= OnStatusChanged;
+                    _fetcher.ErrorOccurred -= OnErrorOccurred;
+                    _fetcher.Dispose();
+                    _fetcher = null;
+                    
+                    // 重新启用连接按钮
+                    if (InvokeRequired)
+                    {
+                        Invoke(new Action(() => {
+                            buttonConnect.Enabled = true;
+                            buttonConnect.Text = "连接";
+                        }));
+                    }
+                    else
+                    {
+                        buttonConnect.Enabled = true;
+                        buttonConnect.Text = "连接";
+                    }
                     return;
                 }
 
@@ -1029,6 +1050,20 @@ namespace DouyinDanmu
             }
             catch (Exception ex)
             {
+                // 确保在异常情况下也重新启用按钮
+                if (InvokeRequired)
+                {
+                    Invoke(new Action(() => {
+                        buttonConnect.Enabled = true;
+                        buttonConnect.Text = "连接";
+                    }));
+                }
+                else
+                {
+                    buttonConnect.Enabled = true;
+                    buttonConnect.Text = "连接";
+                }
+                
                 OnErrorOccurred(this, ex);
             }
         }
@@ -1105,16 +1140,18 @@ namespace DouyinDanmu
             if (ex.Message.Contains("WebSocket") || ex.Message.Contains("连接") || ex.Message.Contains("网络"))
             {
                 UpdateStatus($"详细错误信息: {ex}");
-                
-                // 自动重置连接状态
-                if (_isConnected)
-                {
-                    _isConnected = false;
-                    buttonConnect.Text = "连接";
-                    buttonConnect.Enabled = true;
-                    textBoxLiveId.Enabled = true;
-                }
             }
+            
+            // 重置连接状态和按钮状态
+            if (_isConnected)
+            {
+                _isConnected = false;
+            }
+            
+            // 确保按钮状态正确
+            buttonConnect.Text = "连接";
+            buttonConnect.Enabled = true;
+            textBoxLiveId.Enabled = true;
         }
 
         /// <summary>

@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using SQLitePCL;
+using System.Collections.Concurrent;
+using System.Threading;
 
 namespace DouyinDanmu.Services
 {
@@ -16,6 +18,14 @@ namespace DouyinDanmu.Services
     {
         private readonly string _connectionString;
         private SqliteConnection? _connection;
+        
+        // 批量插入优化
+        private readonly ConcurrentQueue<LiveMessage> _pendingMessages = new();
+        private readonly System.Threading.Timer _batchTimer;
+        private readonly SemaphoreSlim _batchSemaphore = new(1, 1);
+        private const int BatchSize = 100;
+        private const int BatchIntervalMs = 1000;
+        private string _currentLiveId = string.Empty;
 
         public DatabaseService()
         {
@@ -43,7 +53,222 @@ namespace DouyinDanmu.Services
             }
             
             var dbPath = Path.Combine(appDataPath, "douyin_live_messages.db");
-            _connectionString = $"Data Source={dbPath}";
+            
+            // 优化连接字符串 - 只使用SQLite支持的参数
+            _connectionString = $"Data Source={dbPath};" +
+                               "Cache=Shared;" +
+                               "Pooling=true;";
+            
+            // 初始化批量处理定时器
+            _batchTimer = new System.Threading.Timer(ProcessBatchMessages, null, BatchIntervalMs, BatchIntervalMs);
+        }
+
+        /// <summary>
+        /// 设置当前直播间ID
+        /// </summary>
+        public void SetCurrentLiveId(string liveId)
+        {
+            _currentLiveId = liveId;
+        }
+
+        /// <summary>
+        /// 批量保存消息（异步队列）
+        /// </summary>
+        public void QueueMessage(LiveMessage message)
+        {
+            _pendingMessages.Enqueue(message);
+        }
+
+        /// <summary>
+        /// 处理批量消息
+        /// </summary>
+        private async void ProcessBatchMessages(object? state)
+        {
+            if (_pendingMessages.IsEmpty || string.IsNullOrEmpty(_currentLiveId))
+                return;
+
+            await _batchSemaphore.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var messagesToProcess = new List<LiveMessage>();
+                
+                // 取出待处理的消息
+                for (int i = 0; i < BatchSize && _pendingMessages.TryDequeue(out var message); i++)
+                {
+                    messagesToProcess.Add(message);
+                }
+
+                if (messagesToProcess.Count > 0)
+                {
+                    await SaveMessagesBatchAsync(_currentLiveId, messagesToProcess).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _batchSemaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// 批量保存消息到数据库
+        /// </summary>
+        private async Task SaveMessagesBatchAsync(string liveId, List<LiveMessage> messages)
+        {
+            if (_connection == null || messages.Count == 0) return;
+
+            using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync().ConfigureAwait(false);
+            try
+            {
+                var chatMessages = messages.Where(m => m.Type == LiveMessageType.Chat).ToList();
+                var memberMessages = messages.Where(m => m.Type == LiveMessageType.Member).ToList();
+                var interactionMessages = messages.Where(m => 
+                    m.Type == LiveMessageType.Gift || 
+                    m.Type == LiveMessageType.Like || 
+                    m.Type == LiveMessageType.Social).ToList();
+
+                if (chatMessages.Count > 0)
+                    await BatchInsertChatMessagesAsync(liveId, chatMessages, transaction).ConfigureAwait(false);
+                
+                if (memberMessages.Count > 0)
+                    await BatchInsertMemberMessagesAsync(liveId, memberMessages, transaction).ConfigureAwait(false);
+                
+                if (interactionMessages.Count > 0)
+                    await BatchInsertInteractionMessagesAsync(liveId, interactionMessages, transaction).ConfigureAwait(false);
+
+                await transaction.CommitAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                await transaction.RollbackAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 批量插入聊天消息
+        /// </summary>
+        private async Task BatchInsertChatMessagesAsync(string liveId, List<LiveMessage> messages, SqliteTransaction transaction)
+        {
+            const string sql = @"
+                INSERT INTO chat_messages (live_id, timestamp, user_id, user_name, fans_club_level, pay_grade_level, content)
+                VALUES (@liveId, @timestamp, @userId, @userName, @fansClubLevel, @payGradeLevel, @content)";
+
+            using var command = new SqliteCommand(sql, _connection, transaction);
+            
+            // 预编译参数
+            var liveIdParam = command.Parameters.Add("@liveId", SqliteType.Text);
+            var timestampParam = command.Parameters.Add("@timestamp", SqliteType.Text);
+            var userIdParam = command.Parameters.Add("@userId", SqliteType.Text);
+            var userNameParam = command.Parameters.Add("@userName", SqliteType.Text);
+            var fansClubLevelParam = command.Parameters.Add("@fansClubLevel", SqliteType.Integer);
+            var payGradeLevelParam = command.Parameters.Add("@payGradeLevel", SqliteType.Integer);
+            var contentParam = command.Parameters.Add("@content", SqliteType.Text);
+
+            foreach (var message in messages)
+            {
+                liveIdParam.Value = liveId;
+                timestampParam.Value = message.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                userIdParam.Value = message.UserId ?? (object)DBNull.Value;
+                userNameParam.Value = message.UserName ?? (object)DBNull.Value;
+                fansClubLevelParam.Value = message.FansClubLevel;
+                payGradeLevelParam.Value = message.PayGradeLevel;
+                contentParam.Value = message.Content ?? (object)DBNull.Value;
+
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// 批量插入成员消息
+        /// </summary>
+        private async Task BatchInsertMemberMessagesAsync(string liveId, List<LiveMessage> messages, SqliteTransaction transaction)
+        {
+            const string sql = @"
+                INSERT INTO member_messages (live_id, timestamp, user_id, user_name, fans_club_level, pay_grade_level, action_type)
+                VALUES (@liveId, @timestamp, @userId, @userName, @fansClubLevel, @payGradeLevel, @actionType)";
+
+            using var command = new SqliteCommand(sql, _connection, transaction);
+            
+            var liveIdParam = command.Parameters.Add("@liveId", SqliteType.Text);
+            var timestampParam = command.Parameters.Add("@timestamp", SqliteType.Text);
+            var userIdParam = command.Parameters.Add("@userId", SqliteType.Text);
+            var userNameParam = command.Parameters.Add("@userName", SqliteType.Text);
+            var fansClubLevelParam = command.Parameters.Add("@fansClubLevel", SqliteType.Integer);
+            var payGradeLevelParam = command.Parameters.Add("@payGradeLevel", SqliteType.Integer);
+            var actionTypeParam = command.Parameters.Add("@actionType", SqliteType.Text);
+
+            foreach (var message in messages)
+            {
+                liveIdParam.Value = liveId;
+                timestampParam.Value = message.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                userIdParam.Value = message.UserId ?? (object)DBNull.Value;
+                userNameParam.Value = message.UserName ?? (object)DBNull.Value;
+                fansClubLevelParam.Value = message.FansClubLevel;
+                payGradeLevelParam.Value = message.PayGradeLevel;
+                actionTypeParam.Value = "enter";
+
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// 批量插入交互消息
+        /// </summary>
+        private async Task BatchInsertInteractionMessagesAsync(string liveId, List<LiveMessage> messages, SqliteTransaction transaction)
+        {
+            const string sql = @"
+                INSERT INTO interaction_messages (live_id, timestamp, user_id, user_name, fans_club_level, pay_grade_level, 
+                                                message_type, gift_name, gift_count, like_count, content)
+                VALUES (@liveId, @timestamp, @userId, @userName, @fansClubLevel, @payGradeLevel, 
+                       @messageType, @giftName, @giftCount, @likeCount, @content)";
+
+            using var command = new SqliteCommand(sql, _connection, transaction);
+            
+            var liveIdParam = command.Parameters.Add("@liveId", SqliteType.Text);
+            var timestampParam = command.Parameters.Add("@timestamp", SqliteType.Text);
+            var userIdParam = command.Parameters.Add("@userId", SqliteType.Text);
+            var userNameParam = command.Parameters.Add("@userName", SqliteType.Text);
+            var fansClubLevelParam = command.Parameters.Add("@fansClubLevel", SqliteType.Integer);
+            var payGradeLevelParam = command.Parameters.Add("@payGradeLevel", SqliteType.Integer);
+            var messageTypeParam = command.Parameters.Add("@messageType", SqliteType.Text);
+            var giftNameParam = command.Parameters.Add("@giftName", SqliteType.Text);
+            var giftCountParam = command.Parameters.Add("@giftCount", SqliteType.Integer);
+            var likeCountParam = command.Parameters.Add("@likeCount", SqliteType.Integer);
+            var contentParam = command.Parameters.Add("@content", SqliteType.Text);
+
+            foreach (var message in messages)
+            {
+                liveIdParam.Value = liveId;
+                timestampParam.Value = message.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                userIdParam.Value = message.UserId ?? (object)DBNull.Value;
+                userNameParam.Value = message.UserName ?? (object)DBNull.Value;
+                fansClubLevelParam.Value = message.FansClubLevel;
+                payGradeLevelParam.Value = message.PayGradeLevel;
+                messageTypeParam.Value = message.Type.ToString();
+
+                if (message is GiftMessage giftMsg)
+                {
+                    giftNameParam.Value = giftMsg.GiftName ?? (object)DBNull.Value;
+                    giftCountParam.Value = giftMsg.GiftCount;
+                    likeCountParam.Value = 0;
+                }
+                else if (message is LikeMessage likeMsg)
+                {
+                    giftNameParam.Value = DBNull.Value;
+                    giftCountParam.Value = 0;
+                    likeCountParam.Value = likeMsg.LikeCount;
+                }
+                else
+                {
+                    giftNameParam.Value = DBNull.Value;
+                    giftCountParam.Value = 0;
+                    likeCountParam.Value = 0;
+                }
+
+                contentParam.Value = message.Content ?? (object)DBNull.Value;
+
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
         }
 
         /// <summary>
@@ -54,15 +279,43 @@ namespace DouyinDanmu.Services
             try
             {
                 _connection = new SqliteConnection(_connectionString);
-                await _connection.OpenAsync();
-                await CreateTablesAsync();
+                await _connection.OpenAsync().ConfigureAwait(false);
+                
+                // 设置性能优化参数
+                await ExecutePragmasAsync().ConfigureAwait(false);
+                
+                await CreateTablesAsync().ConfigureAwait(false);
                 
                 // 验证数据库是否正确创建
-                await VerifyDatabaseAsync();
+                await VerifyDatabaseAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"数据库初始化失败: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// 执行性能优化的PRAGMA语句
+        /// </summary>
+        private async Task ExecutePragmasAsync()
+        {
+            if (_connection == null) return;
+
+            var pragmas = new[]
+            {
+                "PRAGMA journal_mode=WAL;",
+                "PRAGMA synchronous=NORMAL;",
+                "PRAGMA cache_size=10000;",
+                "PRAGMA temp_store=MEMORY;",
+                "PRAGMA mmap_size=268435456;",
+                "PRAGMA optimize;"
+            };
+
+            foreach (var pragma in pragmas)
+            {
+                using var command = new SqliteCommand(pragma, _connection);
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
         }
 
@@ -187,100 +440,6 @@ namespace DouyinDanmu.Services
                 using var command = new SqliteCommand(indexSql, _connection);
                 await command.ExecuteNonQueryAsync();
             }
-        }
-
-        /// <summary>
-        /// 保存聊天消息
-        /// </summary>
-        public async Task SaveChatMessageAsync(string liveId, LiveMessage message)
-        {
-            if (_connection == null) return;
-
-            var sql = @"
-                INSERT INTO chat_messages (live_id, timestamp, user_id, user_name, fans_club_level, pay_grade_level, content)
-                VALUES (@liveId, @timestamp, @userId, @userName, @fansClubLevel, @payGradeLevel, @content)";
-
-            using var command = new SqliteCommand(sql, _connection);
-            command.Parameters.AddWithValue("@liveId", liveId);
-            command.Parameters.AddWithValue("@timestamp", message.Timestamp);
-            command.Parameters.AddWithValue("@userId", message.UserId ?? "");
-            command.Parameters.AddWithValue("@userName", message.UserName ?? "");
-            command.Parameters.AddWithValue("@fansClubLevel", message.FansClubLevel);
-            command.Parameters.AddWithValue("@payGradeLevel", message.PayGradeLevel);
-            command.Parameters.AddWithValue("@content", message.Content ?? "");
-
-            await command.ExecuteNonQueryAsync();
-        }
-
-        /// <summary>
-        /// 保存进场消息
-        /// </summary>
-        public async Task SaveMemberMessageAsync(string liveId, LiveMessage message)
-        {
-            if (_connection == null) return;
-
-            var sql = @"
-                INSERT INTO member_messages (live_id, timestamp, user_id, user_name, fans_club_level, pay_grade_level, action_type)
-                VALUES (@liveId, @timestamp, @userId, @userName, @fansClubLevel, @payGradeLevel, @actionType)";
-
-            using var command = new SqliteCommand(sql, _connection);
-            command.Parameters.AddWithValue("@liveId", liveId);
-            command.Parameters.AddWithValue("@timestamp", message.Timestamp);
-            command.Parameters.AddWithValue("@userId", message.UserId ?? "");
-            command.Parameters.AddWithValue("@userName", message.UserName ?? "");
-            command.Parameters.AddWithValue("@fansClubLevel", message.FansClubLevel);
-            command.Parameters.AddWithValue("@payGradeLevel", message.PayGradeLevel);
-            command.Parameters.AddWithValue("@actionType", "enter");
-
-            await command.ExecuteNonQueryAsync();
-        }
-
-        /// <summary>
-        /// 保存互动消息（礼物、点赞、关注等）
-        /// </summary>
-        public async Task SaveInteractionMessageAsync(string liveId, LiveMessage message)
-        {
-            if (_connection == null) return;
-
-            var sql = @"
-                INSERT INTO interaction_messages (live_id, timestamp, user_id, user_name, fans_club_level, pay_grade_level, 
-                                                message_type, gift_name, gift_count, like_count, content)
-                VALUES (@liveId, @timestamp, @userId, @userName, @fansClubLevel, @payGradeLevel, 
-                        @messageType, @giftName, @giftCount, @likeCount, @content)";
-
-            using var command = new SqliteCommand(sql, _connection);
-            command.Parameters.AddWithValue("@liveId", liveId);
-            command.Parameters.AddWithValue("@timestamp", message.Timestamp);
-            command.Parameters.AddWithValue("@userId", message.UserId ?? "");
-            command.Parameters.AddWithValue("@userName", message.UserName ?? "");
-            command.Parameters.AddWithValue("@fansClubLevel", message.FansClubLevel);
-            command.Parameters.AddWithValue("@payGradeLevel", message.PayGradeLevel);
-            command.Parameters.AddWithValue("@messageType", message.Type.ToString());
-
-            // 根据消息类型设置特定字段
-            if (message is GiftMessage gift)
-            {
-                command.Parameters.AddWithValue("@giftName", gift.GiftName ?? "");
-                command.Parameters.AddWithValue("@giftCount", gift.GiftCount);
-                command.Parameters.AddWithValue("@likeCount", 0);
-                command.Parameters.AddWithValue("@content", $"{gift.GiftName} x{gift.GiftCount}");
-            }
-            else if (message is LikeMessage like)
-            {
-                command.Parameters.AddWithValue("@giftName", "");
-                command.Parameters.AddWithValue("@giftCount", 0);
-                command.Parameters.AddWithValue("@likeCount", like.LikeCount);
-                command.Parameters.AddWithValue("@content", $"点赞 x{like.LikeCount}");
-            }
-            else
-            {
-                command.Parameters.AddWithValue("@giftName", "");
-                command.Parameters.AddWithValue("@giftCount", 0);
-                command.Parameters.AddWithValue("@likeCount", 0);
-                command.Parameters.AddWithValue("@content", message.Content ?? "");
-            }
-
-            await command.ExecuteNonQueryAsync();
         }
 
         /// <summary>

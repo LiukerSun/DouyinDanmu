@@ -9,6 +9,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <StartupObject>DouyinDanmu.Program</StartupObject>
     
+    <!-- 应用程序信息 -->
+    <AssemblyTitle>抖音直播弹幕采集工具</AssemblyTitle>
+    <AssemblyDescription>实时采集抖音直播弹幕、礼物、点赞等消息</AssemblyDescription>
+    <AssemblyCompany>DouyinDanmu</AssemblyCompany>
+    <AssemblyProduct>DouyinDanmu</AssemblyProduct>
+    <AssemblyCopyright>Copyright © 2024</AssemblyCopyright>
+    <AssemblyVersion>1.4.0.0</AssemblyVersion>
+    <FileVersion>1.4.0.0</FileVersion>
+    
     <!-- 默认配置：框架依赖（最小文件） -->
     <SelfContained>false</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
@@ -39,6 +48,11 @@
     <EventSourceSupport>false</EventSourceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <InvariantGlobalization>false</InvariantGlobalization>
+    
+    <!-- 内存和GC优化 -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
@@ -51,6 +65,10 @@
     <PublishReadyToRun>true</PublishReadyToRun>
     <CrossGenDuringPublish>true</CrossGenDuringPublish>
     <OptimizationPreference>Speed</OptimizationPreference>
+    
+    <!-- 移除调试信息 -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <!-- 快速启动配置 -->
@@ -64,12 +82,24 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 数据库相关 -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.10" />
+    
+    <!-- JSON处理 - 使用System.Text.Json替代Newtonsoft.Json以提升性能 -->
+    <PackageReference Include="System.Text.Json" Version="8.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    
+    <!-- 网络相关 -->
     <PackageReference Include="System.Net.WebSockets.Client" Version="4.3.2" />
+    
+    <!-- JavaScript引擎 -->
     <PackageReference Include="Microsoft.ClearScript.V8" Version="7.4.5" />
     <PackageReference Include="Microsoft.ClearScript.V8.Native.win-x64" Version="7.4.5" />
+    
+    <!-- 内存管理优化 -->
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+    <PackageReference Include="System.Buffers" Version="4.5.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -81,15 +111,26 @@
     <TrimmerRootAssembly Include="DouyinDanmu" />
     <TrimmerRootAssembly Include="Microsoft.ClearScript.V8" />
     <TrimmerRootAssembly Include="System.Windows.Forms" />
+    <TrimmerRootAssembly Include="System.Text.Json" />
   </ItemGroup>
 
-  <!-- 启动性能分析支持 -->
+  <!-- 运行时配置优化 -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <RuntimeHostConfigurationOption Include="System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization" Value="false" />
     <RuntimeHostConfigurationOption Include="System.Globalization.Invariant" Value="false" />
     <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.MinThreads" Value="4" />
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.MaxThreads" Value="32" />
     <RuntimeHostConfigurationOption Include="System.GC.Server" Value="false" />
     <RuntimeHostConfigurationOption Include="System.GC.Concurrent" Value="true" />
+    <RuntimeHostConfigurationOption Include="System.GC.RetainVM" Value="false" />
+    <RuntimeHostConfigurationOption Include="System.Runtime.TieredCompilation" Value="true" />
+    <RuntimeHostConfigurationOption Include="System.Runtime.TieredPGO" Value="true" />
   </ItemGroup>
+
+  <!-- 编译器指令 -->
+  <PropertyGroup>
+    <DefineConstants Condition="'$(Configuration)'=='Release'">RELEASE</DefineConstants>
+    <DefineConstants Condition="'$(Configuration)'=='Debug'">DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
 
 </Project>

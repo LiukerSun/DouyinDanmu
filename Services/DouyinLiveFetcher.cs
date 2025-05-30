@@ -1,6 +1,7 @@
 using DouyinDanmu.Models;
 using Newtonsoft.Json;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.WebSockets;
@@ -23,6 +24,10 @@ namespace DouyinDanmu.Services
         private CancellationTokenSource? _cancellationTokenSource;
         private System.Threading.Timer? _heartbeatTimer;
         private bool _disposed = false;
+
+        // 内存池优化
+        private static readonly ArrayPool<byte> _arrayPool = ArrayPool<byte>.Shared;
+        private const int BufferSize = 8192;
 
         private string? _ttwid;
         private string? _roomId;
@@ -52,7 +57,7 @@ namespace DouyinDanmu.Services
 
             try
             {
-                var response = await _httpClient.GetAsync("https://live.douyin.com/");
+                var response = await _httpClient.GetAsync("https://live.douyin.com/").ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
                 if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
@@ -86,7 +91,7 @@ namespace DouyinDanmu.Services
 
             try
             {
-                var ttwid = await GetTtwidAsync();
+                var ttwid = await GetTtwidAsync().ConfigureAwait(false);
                 if (string.IsNullOrEmpty(ttwid))
                     return null;
 
@@ -96,10 +101,10 @@ namespace DouyinDanmu.Services
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Add("Cookie", $"ttwid={ttwid}&msToken={msToken}; __ac_nonce=0123407cc00a9e438deb4");
 
-                var response = await _httpClient.SendAsync(request);
+                var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
-                var content = await response.Content.ReadAsStringAsync();
+                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 var match = Regex.Match(content, @"roomId\\"":\\""(\d+)\\""");
                 
                 if (match.Success)
@@ -123,8 +128,8 @@ namespace DouyinDanmu.Services
         {
             try
             {
-                var roomId = await GetRoomIdAsync();
-                var ttwid = await GetTtwidAsync();
+                var roomId = await GetRoomIdAsync().ConfigureAwait(false);
+                var ttwid = await GetTtwidAsync().ConfigureAwait(false);
                 
                 if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(ttwid))
                     return false;
@@ -141,10 +146,10 @@ namespace DouyinDanmu.Services
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Add("Cookie", $"ttwid={ttwid};");
 
-                var response = await _httpClient.SendAsync(request);
+                var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
-                var content = await response.Content.ReadAsStringAsync();
+                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 var jsonResponse = JsonConvert.DeserializeObject<dynamic>(content);
 
                 if (jsonResponse?.data != null)
@@ -177,15 +182,15 @@ namespace DouyinDanmu.Services
             {
                 _cancellationTokenSource = new CancellationTokenSource();
                 
-                var roomId = await GetRoomIdAsync();
-                var ttwid = await GetTtwidAsync();
+                var roomId = await GetRoomIdAsync().ConfigureAwait(false);
+                var ttwid = await GetTtwidAsync().ConfigureAwait(false);
                 
                 if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(ttwid))
                 {
                     throw new InvalidOperationException("无法获取房间信息");
                 }
 
-                await ConnectWebSocketAsync(roomId, ttwid);
+                await ConnectWebSocketAsync(roomId, ttwid).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -194,7 +199,7 @@ namespace DouyinDanmu.Services
         }
 
         /// <summary>
-        /// 连接WebSocket
+        /// 连接WebSocket - 使用内存池优化
         /// </summary>
         private async Task ConnectWebSocketAsync(string roomId, string ttwid)
         {
@@ -301,48 +306,48 @@ namespace DouyinDanmu.Services
         }
 
         /// <summary>
-        /// 接收消息
+        /// 接收消息 - 优化内存使用
         /// </summary>
         private async Task ReceiveMessagesAsync()
         {
-            var buffer = new byte[8192]; // 增加缓冲区大小
-            
+            if (_webSocket == null || _cancellationTokenSource == null) return;
+
+            var buffer = _arrayPool.Rent(BufferSize);
             try
             {
-                while (_webSocket?.State == WebSocketState.Open && _cancellationTokenSource?.Token.IsCancellationRequested == false)
+                while (_webSocket.State == WebSocketState.Open && !_cancellationTokenSource.Token.IsCancellationRequested)
                 {
-                    var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
-                    var result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
-                    
-                    if (result.MessageType == WebSocketMessageType.Binary)
+                    try
                     {
-                        var messageData = new byte[result.Count];
-                        Array.Copy(buffer, messageData, result.Count);
-                        
-                        try
+                        var result = await _webSocket.ReceiveAsync(
+                            new ArraySegment<byte>(buffer), 
+                            _cancellationTokenSource.Token).ConfigureAwait(false);
+
+                        if (result.MessageType == WebSocketMessageType.Binary)
                         {
-                            // 解析消息并处理ACK
-                            await ProcessWebSocketMessage(messageData);
+                            var messageData = new byte[result.Count];
+                            Array.Copy(buffer, 0, messageData, 0, result.Count);
+                            await ProcessWebSocketMessage(messageData).ConfigureAwait(false);
                         }
-                        catch (Exception ex)
+                        else if (result.MessageType == WebSocketMessageType.Close)
                         {
-                            // 忽略解析错误，继续接收其他消息
-                            StatusChanged?.Invoke(this, $"消息解析错误: {ex.Message}");
+                            break;
                         }
                     }
-                    else if (result.MessageType == WebSocketMessageType.Close)
+                    catch (OperationCanceledException)
                     {
-                        StatusChanged?.Invoke(this, "WebSocket连接已关闭");
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        ErrorOccurred?.Invoke(this, ex);
                         break;
                     }
                 }
             }
-            catch (Exception ex)
+            finally
             {
-                if (_cancellationTokenSource?.Token.IsCancellationRequested != true)
-                {
-                    ErrorOccurred?.Invoke(this, ex);
-                }
+                _arrayPool.Return(buffer);
             }
         }
 

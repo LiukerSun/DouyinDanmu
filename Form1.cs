@@ -225,8 +225,7 @@ namespace DouyinDanmu
                 }
                 
                 var settingsPath = SettingsManager.GetSettingsFilePath();
-                var settingsInfo = SettingsManager.GetSettingsFileInfo();
-                UpdateStatus($"已加载设置，关注用户: {_watchedUserIds.Count}个 | 设置文件: {settingsInfo}");
+                UpdateStatus($"已加载设置，关注用户: {_watchedUserIds.Count}个 | 设置文件: {settingsPath}");
             }
             catch (Exception ex)
             {
@@ -499,20 +498,14 @@ namespace DouyinDanmu
         {
             if (InvokeRequired)
             {
-                Invoke(new Action<object?, LiveMessage>(OnMessageReceived), sender, message);
+                BeginInvoke(new Action(() => OnMessageReceived(sender, message)));
                 return;
             }
 
-            // 过滤掉Unknown和RoomStats类型的消息（根据用户要求）
-            if (message.Type == LiveMessageType.Unknown || message.Type == LiveMessageType.RoomStats)
-            {
-                return;
-            }
+            // 使用批量队列而不是立即保存到数据库
+            _databaseService?.QueueMessage(message);
 
-            // 异步保存到数据库
-            _ = SaveMessageToDatabaseAsync(message);
-
-            // 将消息加入待处理队列，由定时器批量处理
+            // 添加到UI队列进行批量更新
             lock (_pendingMessagesLock)
             {
                 _pendingMessages.Enqueue(message);
@@ -520,37 +513,13 @@ namespace DouyinDanmu
         }
 
         /// <summary>
-        /// 异步保存消息到数据库
+        /// 异步保存消息到数据库（已废弃，使用批量队列）
         /// </summary>
+        [Obsolete("使用 DatabaseService.QueueMessage 代替")]
         private async Task SaveMessageToDatabaseAsync(LiveMessage message)
         {
-            if (_databaseService == null) return;
-
-            try
-            {
-                var liveId = textBoxLiveId.Text.Trim();
-                if (string.IsNullOrEmpty(liveId)) return;
-
-                switch (message.Type)
-                {
-                    case LiveMessageType.Chat:
-                        await _databaseService.SaveChatMessageAsync(liveId, message);
-                        break;
-                    case LiveMessageType.Member:
-                        await _databaseService.SaveMemberMessageAsync(liveId, message);
-                        break;
-                    case LiveMessageType.Gift:
-                    case LiveMessageType.Like:
-                    case LiveMessageType.Social:
-                        await _databaseService.SaveInteractionMessageAsync(liveId, message);
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                // 数据库保存失败不影响界面显示，只记录错误
-                Console.WriteLine($"保存消息到数据库失败: {ex.Message}");
-            }
+            // 此方法已被批量处理替代
+            await Task.CompletedTask.ConfigureAwait(false);
         }
 
         /// <summary>
@@ -948,28 +917,46 @@ namespace DouyinDanmu
         /// </summary>
         private async void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
-            // 停止并释放定时器
-            _updateTimer?.Stop();
-            _updateTimer?.Dispose();
-            
-            // 保存设置
-            SaveSettings();
-            
-            if (_fetcher != null)
+            try
             {
-                try
-                {
-                    await _fetcher.StopAsync();
-                    _fetcher.Dispose();
-                }
-                catch
-                {
-                    // 忽略关闭时的错误
-                }
-            }
+                // 保存设置
+                SaveSettings();
 
-            // 释放数据库资源
-            _databaseService?.Dispose();
+                // 断开连接
+                if (_isConnected && _fetcher != null)
+                {
+                    e.Cancel = true; // 暂时取消关闭
+                    
+                    UpdateStatus("正在断开连接...");
+                    await DisconnectAsync().ConfigureAwait(false);
+                    
+                    // 等待批量处理完成
+                    await Task.Delay(2000).ConfigureAwait(false);
+                    
+                    // 现在可以安全关闭
+                    if (InvokeRequired)
+                    {
+                        Invoke(new Action(() => {
+                            e.Cancel = false;
+                            Close();
+                        }));
+                    }
+                    else
+                    {
+                        e.Cancel = false;
+                        Close();
+                    }
+                    return;
+                }
+
+                // 释放数据库连接
+                _databaseService?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                // 记录错误但不阻止关闭
+                System.Diagnostics.Debug.WriteLine($"关闭窗体时发生错误: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -977,15 +964,20 @@ namespace DouyinDanmu
         /// </summary>
         private async void buttonConnect_Click(object sender, EventArgs e)
         {
-            if (_isConnected)
+            try
             {
-                // 断开连接
-                await DisconnectAsync();
+                if (_isConnected)
+                {
+                    await DisconnectAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    await ConnectAsync().ConfigureAwait(false);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                // 连接
-                await ConnectAsync();
+                OnErrorOccurred(this, ex);
             }
         }
 
@@ -996,39 +988,48 @@ namespace DouyinDanmu
         {
             try
             {
-                var liveId = textBoxLiveId.Text.Trim();
-                if (string.IsNullOrEmpty(liveId))
-                {
-                    MessageBox.Show("请输入直播间ID", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                buttonConnect.Enabled = false;
-                buttonConnect.Text = "连接中...";
                 UpdateStatus("正在连接...");
+                buttonConnect.Enabled = false;
 
-                _fetcher = new Services.DouyinLiveFetcher(liveId);
+                _fetcher = new Services.DouyinLiveFetcher(textBoxLiveId.Text.Trim());
                 _fetcher.MessageReceived += OnMessageReceived;
                 _fetcher.StatusChanged += OnStatusChanged;
                 _fetcher.ErrorOccurred += OnErrorOccurred;
 
-                await _fetcher.StartAsync();
-                
+                // 设置数据库当前直播间ID
+                _databaseService?.SetCurrentLiveId(textBoxLiveId.Text.Trim());
+
+                // 检查直播间状态
+                var isLive = await _fetcher.GetRoomStatusAsync().ConfigureAwait(false);
+                if (!isLive)
+                {
+                    UpdateStatus("直播间未开播或已结束");
+                    return;
+                }
+
+                // 开始抓取
+                await _fetcher.StartAsync().ConfigureAwait(false);
                 _isConnected = true;
-                buttonConnect.Text = "断开连接";
-                buttonConnect.Enabled = true;
-                textBoxLiveId.Enabled = false;
                 
-                UpdateStatus($"已连接到直播间: {liveId}");
+                // 更新UI状态
+                if (InvokeRequired)
+                {
+                    Invoke(new Action(() => {
+                        buttonConnect.Text = "断开连接";
+                        buttonConnect.Enabled = true;
+                        UpdateStatus("已连接");
+                    }));
+                }
+                else
+                {
+                    buttonConnect.Text = "断开连接";
+                    buttonConnect.Enabled = true;
+                    UpdateStatus("已连接");
+                }
             }
             catch (Exception ex)
             {
-                _isConnected = false;
-                buttonConnect.Text = "连接";
-                buttonConnect.Enabled = true;
-                textBoxLiveId.Enabled = true;
-                UpdateStatus($"连接失败: {ex.Message}");
-                MessageBox.Show($"连接失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                OnErrorOccurred(this, ex);
             }
         }
 
@@ -1039,29 +1040,51 @@ namespace DouyinDanmu
         {
             try
             {
-                buttonConnect.Enabled = false;
-                buttonConnect.Text = "断开中...";
-                UpdateStatus("正在断开连接...");
-
                 if (_fetcher != null)
                 {
                     _fetcher.MessageReceived -= OnMessageReceived;
                     _fetcher.StatusChanged -= OnStatusChanged;
                     _fetcher.ErrorOccurred -= OnErrorOccurred;
-                    await _fetcher.StopAsync();
+                    
+                    await _fetcher.StopAsync().ConfigureAwait(false);
+                    _fetcher.Dispose();
                     _fetcher = null;
                 }
 
                 _isConnected = false;
-                buttonConnect.Text = "连接";
-                buttonConnect.Enabled = true;
-                textBoxLiveId.Enabled = true;
                 
-                UpdateStatus("已断开连接");
+                // 更新UI状态
+                if (InvokeRequired)
+                {
+                    Invoke(new Action(() => {
+                        buttonConnect.Text = "连接";
+                        buttonConnect.Enabled = true;
+                        UpdateStatus("已断开连接");
+                    }));
+                }
+                else
+                {
+                    buttonConnect.Text = "连接";
+                    buttonConnect.Enabled = true;
+                    UpdateStatus("已断开连接");
+                }
             }
             catch (Exception ex)
             {
-                UpdateStatus($"断开连接时出错: {ex.Message}");
+                OnErrorOccurred(this, ex);
+            }
+            finally
+            {
+                if (InvokeRequired)
+                {
+                    Invoke(new Action(() => {
+                        buttonConnect.Enabled = true;
+                    }));
+                }
+                else
+                {
+                    buttonConnect.Enabled = true;
+                }
             }
         }
 

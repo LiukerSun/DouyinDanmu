@@ -31,6 +31,7 @@ partial class Form1
         this.groupBoxConnection = new System.Windows.Forms.GroupBox();
         this.buttonDatabase = new System.Windows.Forms.Button();
         this.buttonSettings = new System.Windows.Forms.Button();
+        this.buttonWebSocket = new System.Windows.Forms.Button();
         this.buttonConnect = new System.Windows.Forms.Button();
         this.labelLiveId = new System.Windows.Forms.Label();
         this.textBoxLiveId = new System.Windows.Forms.TextBox();
@@ -99,6 +100,7 @@ partial class Form1
         | System.Windows.Forms.AnchorStyles.Right)));
         this.groupBoxConnection.Controls.Add(this.buttonDatabase);
         this.groupBoxConnection.Controls.Add(this.buttonSettings);
+        this.groupBoxConnection.Controls.Add(this.buttonWebSocket);
         this.groupBoxConnection.Controls.Add(this.buttonConnect);
         this.groupBoxConnection.Controls.Add(this.labelLiveId);
         this.groupBoxConnection.Controls.Add(this.textBoxLiveId);
@@ -111,7 +113,7 @@ partial class Form1
         // 
         // buttonDatabase
         // 
-        this.buttonDatabase.Location = new System.Drawing.Point(600, 45);
+        this.buttonDatabase.Location = new System.Drawing.Point(640, 45);
         this.buttonDatabase.Name = "buttonDatabase";
         this.buttonDatabase.Size = new System.Drawing.Size(80, 25);
         this.buttonDatabase.TabIndex = 4;
@@ -121,7 +123,7 @@ partial class Form1
         // 
         // buttonSettings
         // 
-        this.buttonSettings.Location = new System.Drawing.Point(500, 45);
+        this.buttonSettings.Location = new System.Drawing.Point(550, 45);
         this.buttonSettings.Name = "buttonSettings";
         this.buttonSettings.Size = new System.Drawing.Size(80, 25);
         this.buttonSettings.TabIndex = 3;
@@ -129,11 +131,21 @@ partial class Form1
         this.buttonSettings.UseVisualStyleBackColor = true;
         this.buttonSettings.Click += new System.EventHandler(this.buttonSettings_Click);
         // 
+        // buttonWebSocket
+        // 
+        this.buttonWebSocket.Location = new System.Drawing.Point(460, 45);
+        this.buttonWebSocket.Name = "buttonWebSocket";
+        this.buttonWebSocket.Size = new System.Drawing.Size(80, 25);
+        this.buttonWebSocket.TabIndex = 2;
+        this.buttonWebSocket.Text = "WebSocket";
+        this.buttonWebSocket.UseVisualStyleBackColor = true;
+        this.buttonWebSocket.Click += new System.EventHandler(this.buttonWebSocket_Click);
+        // 
         // buttonConnect
         // 
-        this.buttonConnect.Location = new System.Drawing.Point(380, 45);
+        this.buttonConnect.Location = new System.Drawing.Point(370, 45);
         this.buttonConnect.Name = "buttonConnect";
-        this.buttonConnect.Size = new System.Drawing.Size(100, 25);
+        this.buttonConnect.Size = new System.Drawing.Size(80, 25);
         this.buttonConnect.TabIndex = 2;
         this.buttonConnect.Text = "连接";
         this.buttonConnect.UseVisualStyleBackColor = true;
@@ -621,6 +633,7 @@ partial class Form1
     private System.Windows.Forms.GroupBox groupBoxConnection;
     private System.Windows.Forms.Button buttonDatabase;
     private System.Windows.Forms.Button buttonSettings;
+    private System.Windows.Forms.Button buttonWebSocket;
     private System.Windows.Forms.Button buttonConnect;
     private System.Windows.Forms.Label labelLiveId;
     private System.Windows.Forms.TextBox textBoxLiveId;

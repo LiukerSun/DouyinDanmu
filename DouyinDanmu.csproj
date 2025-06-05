@@ -86,8 +86,8 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.10" />
     
-    <!-- JSON处理 - 统一使用System.Text.Json -->
-    <PackageReference Include="System.Text.Json" Version="8.0.0" />
+    <!-- JSON处理 - 更新到最新版本修复安全漏洞 -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
     
     <!-- 网络相关 -->
     <PackageReference Include="System.Net.WebSockets.Client" Version="4.3.2" />
@@ -102,6 +102,9 @@
     
     <!-- 配置验证 -->
     <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+    
+    <!-- 异步支持 -->
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
   </ItemGroup>
 
   <ItemGroup>

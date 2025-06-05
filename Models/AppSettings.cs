@@ -51,5 +51,20 @@ namespace DouyinDanmu.Models
         /// 是否自动滚动
         /// </summary>
         public bool AutoScroll { get; set; } = true;
+
+        /// <summary>
+        /// 是否启用WebSocket服务
+        /// </summary>
+        public bool WebSocketEnabled { get; set; } = false;
+
+        /// <summary>
+        /// WebSocket服务端口
+        /// </summary>
+        public int WebSocketPort { get; set; } = 8080;
+
+        /// <summary>
+        /// 是否在连接时自动启动WebSocket服务
+        /// </summary>
+        public bool AutoStartWebSocket { get; set; } = false;
     }
 } 

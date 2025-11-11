@@ -1088,36 +1088,11 @@ namespace DouyinDanmu
                 // 设置数据库当前直播间ID
                 _databaseService?.SetCurrentLiveId(textBoxLiveId.Text.Trim());
 
-                // 检查直播间状态
+                // 检查直播间状态，但不再拦截连接流程
                 var isLive = await _fetcher.GetRoomStatusAsync().ConfigureAwait(false);
                 if (!isLive)
                 {
-                    UpdateStatus("直播间未开播或已结束");
-
-                    // 清理资源并重新启用按钮
-                    _fetcher.MessageReceived -= OnMessageReceived;
-                    _fetcher.StatusChanged -= OnStatusChanged;
-                    _fetcher.ErrorOccurred -= OnErrorOccurred;
-                    _fetcher.Dispose();
-                    _fetcher = null;
-
-                    // 重新启用连接按钮
-                    if (InvokeRequired)
-                    {
-                        Invoke(
-                            new Action(() =>
-                            {
-                                buttonConnect.Enabled = true;
-                                buttonConnect.Text = "连接";
-                            })
-                        );
-                    }
-                    else
-                    {
-                        buttonConnect.Enabled = true;
-                        buttonConnect.Text = "连接";
-                    }
-                    return;
+                    UpdateStatus("开播状态接口不可用或未开播，尝试直接连接");
                 }
 
                 // 开始抓取

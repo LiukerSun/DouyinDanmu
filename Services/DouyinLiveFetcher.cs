@@ -31,6 +31,7 @@ namespace DouyinDanmu.Services
 
         private string? _ttwid;
         private string? _roomId;
+        private string? _acNonce;
 
         public event EventHandler<LiveMessage>? MessageReceived;
         public event EventHandler<string>? StatusChanged;
@@ -81,6 +82,36 @@ namespace DouyinDanmu.Services
             return null;
         }
 
+        private async Task<string?> GetAcNonceAsync()
+        {
+            if (!string.IsNullOrEmpty(_acNonce))
+                return _acNonce;
+
+            try
+            {
+                var response = await _httpClient.GetAsync("https://www.douyin.com/").ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+
+                if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
+                {
+                    foreach (var cookie in cookies)
+                    {
+                        var match = Regex.Match(cookie, "__ac_nonce=([^;]+)");
+                        if (match.Success)
+                        {
+                            _acNonce = match.Groups[1].Value;
+                            return _acNonce;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorOccurred?.Invoke(this, ex);
+            }
+            return null;
+        }
+
         /// <summary>
         /// 获取房间ID
         /// </summary>
@@ -99,7 +130,7 @@ namespace DouyinDanmu.Services
                 var url = $"https://live.douyin.com/{_liveId}";
                 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Add("Cookie", $"ttwid={ttwid}&msToken={msToken}; __ac_nonce=0123407cc00a9e438deb4");
+                request.Headers.Add("Cookie", $"ttwid={ttwid}; msToken={msToken}; __ac_nonce=0123407cc00a9e438deb4");
 
                 var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
@@ -107,6 +138,11 @@ namespace DouyinDanmu.Services
                 var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 var match = Regex.Match(content, @"roomId\\"":\\""(\d+)\\""");
                 
+                if (!match.Success)
+                {
+                    match = Regex.Match(content, "\"roomId\"\\s*:\\s*\"(\\d+)\"");
+                }
+
                 if (match.Success)
                 {
                     _roomId = match.Groups[1].Value;
@@ -130,21 +166,29 @@ namespace DouyinDanmu.Services
             {
                 var roomId = await GetRoomIdAsync().ConfigureAwait(false);
                 var ttwid = await GetTtwidAsync().ConfigureAwait(false);
+                var acNonce = await GetAcNonceAsync().ConfigureAwait(false);
                 
-                if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(ttwid))
+                if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(ttwid) || string.IsNullOrEmpty(acNonce))
                     return false;
 
+                var msToken2 = SignatureGenerator.GenerateMsToken();
+                var ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
                 var url = $"https://live.douyin.com/webcast/room/web/enter/?aid=6383" +
-                         $"&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live" +
-                         $"&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32" +
-                         $"&browser_name=Edge&browser_version=133.0.0.0" +
-                         $"&web_rid={_liveId}" +
-                         $"&room_id_str={roomId}" +
-                         $"&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason=" +
-                         $"&msToken=&a_bogus=";
+                          $"&app_name=douyin_web&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live" +
+                          $"&cookie_enabled=true&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32" +
+                          $"&browser_name=Edge&browser_version=133.0.0.0" +
+                          $"&web_rid={_liveId}" +
+                          $"&room_id_str={roomId}" +
+                          $"&enter_source=&is_need_double_stream=false&insert_task_id=&live_reason=" +
+                         $"&msToken={msToken2}";
+                var query = new Uri(url).Query.TrimStart('?');
+                var aBogus = _signatureGenerator.GenerateABogus(query, ua);
+                url += $"&a_bogus={aBogus}";
 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Add("Cookie", $"ttwid={ttwid};");
+                var acSignature = _signatureGenerator.GenerateAcSignature("www.douyin.com", acNonce!, ua);
+                request.Headers.Add("Cookie", $"ttwid={ttwid}; __ac_nonce={acNonce}; __ac_signature={acSignature}");
+                request.Headers.Add("Referer", $"https://live.douyin.com/{_liveId}");
 
                 var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();

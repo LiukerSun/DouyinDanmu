@@ -24,19 +24,19 @@ namespace DouyinDanmu.Services
         public LoggingService(LoggingSettings settings)
         {
             _settings = settings;
-            
+
             // 设置日志目录
             _logDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "DouyinDanmu", "Logs");
-            
+
             if (!Directory.Exists(_logDirectory))
             {
                 Directory.CreateDirectory(_logDirectory);
             }
 
             _logFilePrefix = "douyin-danmu";
-            
+
             // 启动定时刷新
             _flushTimer = new System.Threading.Timer(FlushLogs, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
@@ -56,7 +56,7 @@ namespace DouyinDanmu.Services
                 Message = message,
                 Exception = exception,
                 Category = category ?? "General",
-                ThreadId = Thread.CurrentThread.ManagedThreadId
+                ThreadId = Environment.CurrentManagedThreadId
             };
 
             _logQueue.Enqueue(entry);
@@ -110,7 +110,7 @@ namespace DouyinDanmu.Services
             try
             {
                 var entries = new List<LogEntry>();
-                
+
                 // 取出所有待写入的日志
                 while (_logQueue.TryDequeue(out var entry))
                 {
@@ -166,13 +166,13 @@ namespace DouyinDanmu.Services
         /// <summary>
         /// 写入控制台日志
         /// </summary>
-        private void WriteToConsole(List<LogEntry> entries)
+        private static void WriteToConsole(List<LogEntry> entries)
         {
             foreach (var entry in entries)
             {
                 var color = GetConsoleColor(entry.Level);
                 var originalColor = Console.ForegroundColor;
-                
+
                 try
                 {
                     Console.ForegroundColor = color;
@@ -188,7 +188,7 @@ namespace DouyinDanmu.Services
         /// <summary>
         /// 格式化日志条目
         /// </summary>
-        private string FormatLogEntry(LogEntry entry)
+        private static string FormatLogEntry(LogEntry entry)
         {
             var sb = new StringBuilder();
             sb.Append($"[{entry.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] ");
@@ -230,7 +230,7 @@ namespace DouyinDanmu.Services
             var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             var rotatedFileName = $"{_logFilePrefix}-{timestamp}.log";
             var rotatedFilePath = Path.Combine(_logDirectory, rotatedFileName);
-            
+
             File.Move(logFilePath, rotatedFilePath);
 
             // 清理旧文件
@@ -252,7 +252,7 @@ namespace DouyinDanmu.Services
 
                     // 按修改时间排序，删除最旧的文件
                     Array.Sort(logFiles, (x, y) => File.GetLastWriteTime(x).CompareTo(File.GetLastWriteTime(y)));
-                    
+
                     var filesToDelete = logFiles.Length - _settings.MaxFileCount;
                     for (int i = 0; i < filesToDelete; i++)
                     {
@@ -269,7 +269,7 @@ namespace DouyinDanmu.Services
         /// <summary>
         /// 获取控制台颜色
         /// </summary>
-        private ConsoleColor GetConsoleColor(LogLevel level)
+        private static ConsoleColor GetConsoleColor(LogLevel level)
         {
             return level switch
             {
@@ -288,10 +288,10 @@ namespace DouyinDanmu.Services
             if (!_disposed)
             {
                 _flushTimer?.Dispose();
-                
+
                 // 最后一次刷新
                 FlushLogs(null);
-                
+
                 _flushSemaphore?.Dispose();
                 _disposed = true;
             }
@@ -310,4 +310,4 @@ namespace DouyinDanmu.Services
         public string Category { get; set; } = string.Empty;
         public int ThreadId { get; set; }
     }
-} 
+}

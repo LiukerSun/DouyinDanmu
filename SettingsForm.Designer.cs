@@ -75,7 +75,7 @@ namespace DouyinDanmu
             this.buttonAdd.TabIndex = 4;
             this.buttonAdd.Text = "添加";
             this.buttonAdd.UseVisualStyleBackColor = true;
-            this.buttonAdd.Click += new System.EventHandler(this.buttonAdd_Click);
+            this.buttonAdd.Click += new System.EventHandler(this.ButtonAdd_Click);
             // 
             // textBoxNickname
             // 
@@ -84,7 +84,7 @@ namespace DouyinDanmu
             this.textBoxNickname.Size = new System.Drawing.Size(280, 23);
             this.textBoxNickname.TabIndex = 3;
             this.textBoxNickname.Visible = false;
-            this.textBoxNickname.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.textBoxNickname_KeyPress);
+            this.textBoxNickname.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.TextBoxNickname_KeyPress);
             // 
             // labelNickname
             // 
@@ -102,7 +102,7 @@ namespace DouyinDanmu
             this.textBoxUserId.Name = "textBoxUserId";
             this.textBoxUserId.Size = new System.Drawing.Size(280, 23);
             this.textBoxUserId.TabIndex = 1;
-            this.textBoxUserId.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.textBoxUserId_KeyPress);
+            this.textBoxUserId.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.TextBoxUserId_KeyPress);
             // 
             // labelUserId
             // 
@@ -121,7 +121,7 @@ namespace DouyinDanmu
             this.buttonRemove.TabIndex = 1;
             this.buttonRemove.Text = "删除选中";
             this.buttonRemove.UseVisualStyleBackColor = true;
-            this.buttonRemove.Click += new System.EventHandler(this.buttonRemove_Click);
+            this.buttonRemove.Click += new System.EventHandler(this.ButtonRemove_Click);
             // 
             // buttonClear
             // 
@@ -131,7 +131,7 @@ namespace DouyinDanmu
             this.buttonClear.TabIndex = 2;
             this.buttonClear.Text = "清空全部";
             this.buttonClear.UseVisualStyleBackColor = true;
-            this.buttonClear.Click += new System.EventHandler(this.buttonClear_Click);
+            this.buttonClear.Click += new System.EventHandler(this.ButtonClear_Click);
             // 
             // buttonOK
             // 
@@ -141,7 +141,7 @@ namespace DouyinDanmu
             this.buttonOK.TabIndex = 2;
             this.buttonOK.Text = "确定";
             this.buttonOK.UseVisualStyleBackColor = true;
-            this.buttonOK.Click += new System.EventHandler(this.buttonOK_Click);
+            this.buttonOK.Click += new System.EventHandler(this.ButtonOK_Click);
             // 
             // buttonCancel
             // 
@@ -151,7 +151,7 @@ namespace DouyinDanmu
             this.buttonCancel.TabIndex = 3;
             this.buttonCancel.Text = "取消";
             this.buttonCancel.UseVisualStyleBackColor = true;
-            this.buttonCancel.Click += new System.EventHandler(this.buttonCancel_Click);
+            this.buttonCancel.Click += new System.EventHandler(this.ButtonCancel_Click);
             // 
             // labelDescription
             // 
@@ -162,7 +162,7 @@ namespace DouyinDanmu
             this.labelDescription.Size = new System.Drawing.Size(240, 17);
             this.labelDescription.TabIndex = 4;
             this.labelDescription.Text = "提示：输入用户ID后会自动从数据库查找昵称";
-            this.labelDescription.Click += new System.EventHandler(this.labelDescription_Click);
+            this.labelDescription.Click += new System.EventHandler(this.LabelDescription_Click);
             // 
             // SettingsForm
             // 
@@ -203,4 +203,4 @@ namespace DouyinDanmu
         private System.Windows.Forms.Button buttonCancel;
         private System.Windows.Forms.Label labelDescription;
     }
-} 
+}

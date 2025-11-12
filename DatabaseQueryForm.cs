@@ -11,8 +11,8 @@ namespace DouyinDanmu
 {
     public partial class DatabaseQueryForm : Form
     {
-        private DatabaseService _databaseService;
-        private List<QueryResult> _currentResults = new List<QueryResult>();
+        private readonly DatabaseService _databaseService;
+        private List<QueryResult> _currentResults = [];
 
         public DatabaseQueryForm(DatabaseService databaseService)
         {
@@ -66,14 +66,14 @@ namespace DouyinDanmu
                 {
                     // 如果是修改了起始时间，将结束时间设置为起始时间
                     dateTimePickerEnd.Value = dateTimePickerStart.Value;
-                    MessageBox.Show("起始时间不能大于结束时间，已自动调整结束时间。", "时间范围提示", 
+                    MessageBox.Show("起始时间不能大于结束时间，已自动调整结束时间。", "时间范围提示",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else if (changedPicker == dateTimePickerEnd)
                 {
                     // 如果是修改了结束时间，将起始时间设置为结束时间
                     dateTimePickerStart.Value = dateTimePickerEnd.Value;
-                    MessageBox.Show("结束时间不能小于起始时间，已自动调整起始时间。", "时间范围提示", 
+                    MessageBox.Show("结束时间不能小于起始时间，已自动调整起始时间。", "时间范围提示",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
@@ -87,15 +87,15 @@ namespace DouyinDanmu
             try
             {
                 var liveIds = await _databaseService.GetAllLiveIdsAsync();
-                
+
                 comboBoxLiveId.Items.Clear();
                 comboBoxLiveId.Items.Add("全部");
-                
+
                 foreach (var liveId in liveIds)
                 {
                     comboBoxLiveId.Items.Add(liveId);
                 }
-                
+
                 if (comboBoxLiveId.Items.Count > 0)
                 {
                     comboBoxLiveId.SelectedIndex = 0;
@@ -110,14 +110,14 @@ namespace DouyinDanmu
         /// <summary>
         /// 查询按钮点击事件
         /// </summary>
-        private async void buttonQuery_Click(object sender, EventArgs e)
+        private async void ButtonQuery_Click(object sender, EventArgs e)
         {
             try
             {
                 // 验证时间范围
                 if (dateTimePickerStart.Value > dateTimePickerEnd.Value)
                 {
-                    MessageBox.Show("起始时间不能大于结束时间，请重新选择时间范围。", "时间范围错误", 
+                    MessageBox.Show("起始时间不能大于结束时间，请重新选择时间范围。", "时间范围错误",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -127,11 +127,11 @@ namespace DouyinDanmu
                 if (timeSpan.TotalDays > 30)
                 {
                     var result = MessageBox.Show(
-                        $"查询时间范围较大（{timeSpan.TotalDays:F0}天），可能需要较长时间。是否继续？", 
-                        "时间范围提醒", 
-                        MessageBoxButtons.YesNo, 
+                        $"查询时间范围较大（{timeSpan.TotalDays:F0}天），可能需要较长时间。是否继续？",
+                        "时间范围提醒",
+                        MessageBoxButtons.YesNo,
                         MessageBoxIcon.Question);
-                    
+
                     if (result == DialogResult.No)
                         return;
                 }
@@ -139,12 +139,12 @@ namespace DouyinDanmu
                 buttonQuery.Enabled = false;
                 buttonQuery.Text = "查询中...";
                 listViewResults.Items.Clear();
-                
+
                 var filter = BuildQueryFilter();
                 _currentResults = await _databaseService.QueryMessagesAsync(filter);
-                
+
                 DisplayResults(_currentResults);
-                
+
                 labelResultCount.Text = $"查询结果: {_currentResults.Count}条";
             }
             catch (Exception ex)
@@ -161,23 +161,23 @@ namespace DouyinDanmu
         /// <summary>
         /// 重置按钮点击事件
         /// </summary>
-        private void buttonReset_Click(object sender, EventArgs e)
+        private void ButtonReset_Click(object sender, EventArgs e)
         {
             // 重置所有筛选条件
             comboBoxLiveId.SelectedIndex = 0;
             textBoxUserId.Clear();
             textBoxUserName.Clear();
-            
+
             checkBoxChat.Checked = true;
             checkBoxMember.Checked = true;
             checkBoxGift.Checked = true;
             checkBoxLike.Checked = true;
             checkBoxSocial.Checked = true;
-            
+
             // 重置时间范围（与初始化逻辑保持一致）
             dateTimePickerEnd.Value = DateTime.Now;
             dateTimePickerStart.Value = DateTime.Now.AddDays(-7).Date;
-            
+
             listViewResults.Items.Clear();
             labelResultCount.Text = "查询结果: 0条";
             _currentResults.Clear();
@@ -186,7 +186,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 导出按钮点击事件
         /// </summary>
-        private void buttonExport_Click(object sender, EventArgs e)
+        private void ButtonExport_Click(object sender, EventArgs e)
         {
             if (_currentResults.Count == 0)
             {
@@ -204,7 +204,7 @@ namespace DouyinDanmu
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
                     ExportResults(dialog.FileName);
-                    MessageBox.Show($"导出成功！\n文件位置: {dialog.FileName}", "导出完成", 
+                    MessageBox.Show($"导出成功！\n文件位置: {dialog.FileName}", "导出完成",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
@@ -225,7 +225,7 @@ namespace DouyinDanmu
                 EndTime = dateTimePickerEnd.Value, // 直接使用用户选择的结束时间
                 UserId = string.IsNullOrWhiteSpace(textBoxUserId.Text) ? null : textBoxUserId.Text.Trim(),
                 UserName = string.IsNullOrWhiteSpace(textBoxUserName.Text) ? null : textBoxUserName.Text.Trim(),
-                MessageTypes = new List<string>()
+                MessageTypes = []
             };
 
             // 设置直播间ID
@@ -250,7 +250,7 @@ namespace DouyinDanmu
         private void DisplayResults(List<QueryResult> results)
         {
             listViewResults.Items.Clear();
-            
+
             foreach (var result in results)
             {
                 var item = new ListViewItem(result.Id.ToString());
@@ -262,7 +262,7 @@ namespace DouyinDanmu
                 item.SubItems.Add(result.FansClubLevel > 0 ? result.FansClubLevel.ToString() : "-");
                 item.SubItems.Add(result.PayGradeLevel > 0 ? result.PayGradeLevel.ToString() : "-");
                 item.SubItems.Add(result.Content ?? "");
-                
+
                 listViewResults.Items.Add(item);
             }
         }
@@ -270,7 +270,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 获取消息类型显示文本
         /// </summary>
-        private string GetMessageTypeText(string messageType)
+        private static string GetMessageTypeText(string messageType)
         {
             return messageType switch
             {
@@ -317,7 +317,7 @@ namespace DouyinDanmu
                 {
                     for (int i = 0; i < values.Length; i++)
                     {
-                        if (values[i].Contains(",") || values[i].Contains("\"") || values[i].Contains("\n"))
+                        if (values[i].Contains(',') || values[i].Contains('"') || values[i].Contains('\n'))
                         {
                             values[i] = "\"" + values[i].Replace("\"", "\"\"") + "\"";
                         }
@@ -335,4 +335,4 @@ namespace DouyinDanmu
             File.WriteAllLines(filePath, lines, Encoding.UTF8);
         }
     }
-} 
+}

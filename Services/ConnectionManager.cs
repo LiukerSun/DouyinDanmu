@@ -8,10 +8,10 @@ namespace DouyinDanmu.Services
     /// <summary>
     /// 连接管理服务
     /// </summary>
-    public class ConnectionManager : IDisposable
+    public class ConnectionManager(NetworkSettings settings, LoggingService logger) : IDisposable
     {
-        private readonly NetworkSettings _settings;
-        private readonly LoggingService _logger;
+        private readonly NetworkSettings _settings = settings;
+        private readonly LoggingService _logger = logger;
         private DouyinLiveFetcher? _fetcher;
         private CancellationTokenSource? _cancellationTokenSource;
         private System.Threading.Timer? _reconnectTimer;
@@ -25,12 +25,6 @@ namespace DouyinDanmu.Services
 
         public bool IsConnected { get; private set; }
         public string? CurrentLiveId { get; private set; }
-
-        public ConnectionManager(NetworkSettings settings, LoggingService logger)
-        {
-            _settings = settings;
-            _logger = logger;
-        }
 
         /// <summary>
         /// 连接到直播间
@@ -99,7 +93,7 @@ namespace DouyinDanmu.Services
             }
 
             _logger.LogInformation("连接已断开", category: "ConnectionManager");
-            
+
             // 添加一个小延迟确保所有操作完成
             await Task.Delay(100).ConfigureAwait(false);
         }
@@ -177,13 +171,13 @@ namespace DouyinDanmu.Services
 
             _reconnectAttempts++;
             var delay = TimeSpan.FromSeconds(_settings.ReconnectIntervalSeconds * _reconnectAttempts); // 指数退避
-            
+
             _logger.LogInformation($"将在 {delay.TotalSeconds} 秒后进行第 {_reconnectAttempts} 次重连", category: "ConnectionManager");
             OnConnectionStateChanged(ConnectionState.Reconnecting, $"第 {_reconnectAttempts} 次重连 ({delay.TotalSeconds}s)");
 
             // 使用Task.Delay代替Timer来实现异步延迟
             await Task.Delay(delay).ConfigureAwait(false);
-            
+
             if (!_disposed && !string.IsNullOrEmpty(CurrentLiveId))
             {
                 await ConnectInternalAsync().ConfigureAwait(false);
@@ -212,7 +206,7 @@ namespace DouyinDanmu.Services
         private async void OnErrorOccurred(object? sender, Exception exception)
         {
             _logger.LogError($"连接发生错误: {exception.Message}", exception, "ConnectionManager");
-            
+
             if (IsConnected)
             {
                 IsConnected = false;
@@ -256,18 +250,11 @@ namespace DouyinDanmu.Services
     /// <summary>
     /// 连接状态变化事件参数
     /// </summary>
-    public class ConnectionStateChangedEventArgs : EventArgs
+    public class ConnectionStateChangedEventArgs(ConnectionState state, string message) : EventArgs
     {
-        public ConnectionState State { get; }
-        public string Message { get; }
-        public DateTime Timestamp { get; }
-
-        public ConnectionStateChangedEventArgs(ConnectionState state, string message)
-        {
-            State = state;
-            Message = message;
-            Timestamp = DateTime.Now;
-        }
+        public ConnectionState State { get; } = state;
+        public string Message { get; } = message;
+        public DateTime Timestamp { get; } = DateTime.Now;
     }
 
     /// <summary>
@@ -292,4 +279,4 @@ namespace DouyinDanmu.Services
             }
         }
     }
-} 
+}

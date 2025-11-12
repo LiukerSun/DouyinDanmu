@@ -324,7 +324,7 @@ namespace DouyinDanmu.Services
         /// </summary>
         private async Task VerifyDatabaseAsync()
         {
-            if (_connection == null) return;
+            if (_connection is null) return;
 
             var tableNames = new[] { "chat_messages", "member_messages", "interaction_messages" };
             
@@ -334,11 +334,7 @@ namespace DouyinDanmu.Services
                 using var command = new SqliteCommand(sql, _connection);
                 command.Parameters.AddWithValue("@tableName", tableName);
                 
-                var result = await command.ExecuteScalarAsync();
-                if (result == null)
-                {
-                    throw new InvalidOperationException($"数据库表 {tableName} 创建失败");
-                }
+                var result = await command.ExecuteScalarAsync() ?? throw new InvalidOperationException($"数据库表 {tableName} 创建失败");
             }
         }
 
@@ -347,7 +343,7 @@ namespace DouyinDanmu.Services
         /// </summary>
         private async Task CreateTablesAsync()
         {
-            if (_connection == null) return;
+            if (_connection is null) return;
 
             // 创建聊天消息表
             var createChatTableSql = @"
@@ -447,7 +443,7 @@ namespace DouyinDanmu.Services
         /// </summary>
         public async Task<DatabaseStats> GetStatsAsync(string liveId)
         {
-            if (_connection == null) return new DatabaseStats();
+            if (_connection is null) return new DatabaseStats();
 
             var stats = new DatabaseStats { LiveId = liveId };
 
@@ -476,6 +472,24 @@ namespace DouyinDanmu.Services
                 command.Parameters.AddWithValue("@liveId", liveId);
                 var result = await command.ExecuteScalarAsync();
                 stats.InteractionMessageCount = Convert.ToInt32(result);
+            }
+
+            // 统计礼物总数（求和 gift_count）
+            var giftSumSql = "SELECT COALESCE(SUM(gift_count), 0) FROM interaction_messages WHERE live_id = @liveId AND message_type = 'Gift'";
+            using (var command = new SqliteCommand(giftSumSql, _connection))
+            {
+                command.Parameters.AddWithValue("@liveId", liveId);
+                var result = await command.ExecuteScalarAsync();
+                stats.GiftTotalCount = Convert.ToInt32(result);
+            }
+
+            // 统计点赞总数（求和 like_count）
+            var likeSumSql = "SELECT COALESCE(SUM(like_count), 0) FROM interaction_messages WHERE live_id = @liveId AND message_type = 'Like'";
+            using (var command = new SqliteCommand(likeSumSql, _connection))
+            {
+                command.Parameters.AddWithValue("@liveId", liveId);
+                var result = await command.ExecuteScalarAsync();
+                stats.LikeTotalCount = Convert.ToInt32(result);
             }
 
             // 统计独立用户数量
@@ -582,9 +596,9 @@ namespace DouyinDanmu.Services
         /// </summary>
         public async Task<List<string>> GetAllLiveIdsAsync()
         {
-            if (_connection == null) return new List<string>();
+            if (_connection is null) return [];
 
-            var liveIds = new HashSet<string>();
+            HashSet<string> liveIds = [];
 
             // 从三个表中获取所有直播间ID
             var queries = new[]
@@ -609,7 +623,7 @@ namespace DouyinDanmu.Services
                 }
             }
 
-            return liveIds.OrderBy(x => x).ToList();
+            return [.. liveIds.OrderBy(x => x)];
         }
 
         /// <summary>
@@ -617,13 +631,13 @@ namespace DouyinDanmu.Services
         /// </summary>
         public async Task<List<QueryResult>> QueryMessagesAsync(QueryFilter filter)
         {
-            if (_connection == null) return new List<QueryResult>();
+            if (_connection is null) return [];
 
-            var results = new List<QueryResult>();
+            List<QueryResult> results = [];
 
             // 构建查询条件
-            var whereConditions = new List<string>();
-            var parameters = new List<SqliteParameter>();
+            List<string> whereConditions = [];
+            List<SqliteParameter> parameters = [];
 
             // 时间范围条件
             whereConditions.Add("timestamp >= @startTime AND timestamp <= @endTime");
@@ -696,7 +710,7 @@ namespace DouyinDanmu.Services
             }
 
             // 按时间排序
-            return results.OrderBy(r => r.Timestamp).ToList();
+            return [.. results.OrderBy(r => r.Timestamp)];
         }
 
         /// <summary>
@@ -704,7 +718,7 @@ namespace DouyinDanmu.Services
         /// </summary>
         private async Task ExecuteQueryAsync(string sql, List<SqliteParameter> parameters, List<QueryResult> results)
         {
-            if (_connection == null) return;
+            if (_connection is null) return;
 
             using var command = new SqliteCommand(sql, _connection);
             
@@ -738,6 +752,7 @@ namespace DouyinDanmu.Services
         public void Dispose()
         {
             _connection?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 
@@ -751,6 +766,8 @@ namespace DouyinDanmu.Services
         public int MemberMessageCount { get; set; }
         public int InteractionMessageCount { get; set; }
         public int UniqueUserCount { get; set; }
+        public int GiftTotalCount { get; set; }
+        public int LikeTotalCount { get; set; }
         public int TotalMessageCount => ChatMessageCount + MemberMessageCount + InteractionMessageCount;
     }
 
@@ -762,7 +779,7 @@ namespace DouyinDanmu.Services
         public string? LiveId { get; set; }
         public string? UserId { get; set; }
         public string? UserName { get; set; }
-        public List<string> MessageTypes { get; set; } = new List<string>();
+        public List<string> MessageTypes { get; set; } = [];
         public DateTime StartTime { get; set; }
         public DateTime EndTime { get; set; }
     }

@@ -255,7 +255,7 @@ namespace DouyinDanmu
             this.buttonQuery.TabIndex = 16;
             this.buttonQuery.Text = "查询";
             this.buttonQuery.UseVisualStyleBackColor = true;
-            this.buttonQuery.Click += new System.EventHandler(this.buttonQuery_Click);
+            this.buttonQuery.Click += new System.EventHandler(this.ButtonQuery_Click);
             // 
             // buttonReset
             // 
@@ -265,7 +265,7 @@ namespace DouyinDanmu
             this.buttonReset.TabIndex = 17;
             this.buttonReset.Text = "重置";
             this.buttonReset.UseVisualStyleBackColor = true;
-            this.buttonReset.Click += new System.EventHandler(this.buttonReset_Click);
+            this.buttonReset.Click += new System.EventHandler(this.ButtonReset_Click);
             // 
             // buttonExport
             // 
@@ -275,7 +275,7 @@ namespace DouyinDanmu
             this.buttonExport.TabIndex = 18;
             this.buttonExport.Text = "导出";
             this.buttonExport.UseVisualStyleBackColor = true;
-            this.buttonExport.Click += new System.EventHandler(this.buttonExport_Click);
+            this.buttonExport.Click += new System.EventHandler(this.ButtonExport_Click);
             // 
             // groupBoxResults
             // 
@@ -419,4 +419,4 @@ namespace DouyinDanmu
         private System.Windows.Forms.ColumnHeader columnHeaderContent;
         private System.Windows.Forms.Label labelResultCount;
     }
-} 
+}

@@ -74,23 +74,23 @@ namespace DouyinDanmu
             }
         }
 
-        private void checkBoxEnableWebSocket_CheckedChanged(object sender, EventArgs e)
+        private void CheckBoxEnableWebSocket_CheckedChanged(object sender, EventArgs e)
         {
             Settings.WebSocketEnabled = checkBoxEnableWebSocket.Checked;
             UpdateControlsState();
         }
 
-        private void numericUpDownPort_ValueChanged(object sender, EventArgs e)
+        private void NumericUpDownPort_ValueChanged(object sender, EventArgs e)
         {
             Settings.WebSocketPort = (int)numericUpDownPort.Value;
         }
 
-        private void checkBoxAutoStart_CheckedChanged(object sender, EventArgs e)
+        private void CheckBoxAutoStart_CheckedChanged(object sender, EventArgs e)
         {
             Settings.AutoStartWebSocket = checkBoxAutoStart.Checked;
         }
 
-        private async void buttonStartStop_Click(object sender, EventArgs e)
+        private async void ButtonStartStop_Click(object sender, EventArgs e)
         {
             if (_webSocketService == null)
                 return;
@@ -134,7 +134,7 @@ namespace DouyinDanmu
             }
         }
 
-        private void buttonOK_Click(object sender, EventArgs e)
+        private void ButtonOK_Click(object sender, EventArgs e)
         {
             // 验证端口号
             if (
@@ -155,13 +155,13 @@ namespace DouyinDanmu
             Close();
         }
 
-        private void buttonCancel_Click(object sender, EventArgs e)
+        private void ButtonCancel_Click(object sender, EventArgs e)
         {
             DialogResult = DialogResult.Cancel;
             Close();
         }
 
-        private void buttonTest_Click(object sender, EventArgs e)
+        private void ButtonTest_Click(object sender, EventArgs e)
         {
             if (!Settings.WebSocketEnabled)
             {

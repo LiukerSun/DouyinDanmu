@@ -15,16 +15,19 @@ namespace DouyinDanmu
     {
         private Services.DouyinLiveFetcher? _fetcher;
         private bool _isConnected = false;
-        private List<string> _watchedUserIds = new List<string>();
-        private AppSettings _appSettings = new AppSettings();
+        private List<string> _watchedUserIds = [];
+        private AppSettings _appSettings = new();
         private DatabaseService? _databaseService;
         private Services.WebSocketService? _webSocketService;
 
         // 批量更新相关字段
         private readonly System.Windows.Forms.Timer _updateTimer;
-        private readonly Queue<LiveMessage> _pendingMessages = new Queue<LiveMessage>();
-        private readonly object _pendingMessagesLock = new object();
+        private readonly Queue<LiveMessage> _pendingMessages = new();
+        private readonly object _pendingMessagesLock = new();
         private bool _statisticsNeedUpdate = false;
+        private readonly Dictionary<string, (ListViewItem item, int count, DateTime ts)> _giftAggregates = [];
+        private readonly Dictionary<string, (ListViewItem item, int count, DateTime ts)> _watchedGiftAggregates = [];
+        private int _totalGiftCount = 0;
 
         public Form1()
         {
@@ -45,8 +48,10 @@ namespace DouyinDanmu
             EnableListViewDoubleBuffering(listViewWatchedUsers);
 
             // 初始化批量更新定时器
-            _updateTimer = new System.Windows.Forms.Timer();
-            _updateTimer.Interval = 100; // 100ms批量更新一次
+            _updateTimer = new System.Windows.Forms.Timer
+            {
+                Interval = 100 // 100ms批量更新一次
+            };
             _updateTimer.Tick += UpdateTimer_Tick;
             _updateTimer.Start();
 
@@ -75,7 +80,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 为ListView启用双缓冲
         /// </summary>
-        private void EnableListViewDoubleBuffering(ListView listView)
+        private static void EnableListViewDoubleBuffering(ListView listView)
         {
             typeof(ListView).InvokeMember(
                 "DoubleBuffered",
@@ -84,7 +89,7 @@ namespace DouyinDanmu
                     | System.Reflection.BindingFlags.SetProperty,
                 null,
                 listView,
-                new object[] { true }
+                [true]
             );
         }
 
@@ -107,7 +112,7 @@ namespace DouyinDanmu
         /// </summary>
         private void ProcessPendingMessages()
         {
-            List<LiveMessage> messagesToProcess = new List<LiveMessage>();
+            List<LiveMessage> messagesToProcess = [];
 
             lock (_pendingMessagesLock)
             {
@@ -168,7 +173,14 @@ namespace DouyinDanmu
             // 如果是关注的用户，添加到关注用户列表
             if (isWatchedUser)
             {
-                AddWatchedUserMessageInternal(message);
+                if (message.Type == LiveMessageType.Gift && message is GiftMessage giftMsg)
+                {
+                    AddOrUpdateWatchedGift(giftMsg);
+                }
+                else
+                {
+                    AddWatchedUserMessageInternal(message);
+                }
             }
 
             // 根据消息类型添加到对应的ListView
@@ -181,11 +193,70 @@ namespace DouyinDanmu
                     AddMemberMessageInternal(message);
                     break;
                 case LiveMessageType.Gift:
+                    if (message is GiftMessage gift)
+                    {
+                        AddOrUpdateGift(gift);
+                    }
+                    break;
                 case LiveMessageType.Like:
                 case LiveMessageType.Social:
                     AddGiftFollowMessageInternal(message);
                     break;
             }
+        }
+
+        private void AddOrUpdateGift(GiftMessage gift)
+        {
+            var key = (gift.UserId ?? "") + "|" + (gift.GiftName ?? "");
+            var now = DateTime.Now;
+            if (_giftAggregates.TryGetValue(key, out var agg))
+            {
+                if (gift.GiftCount >= agg.count)
+                {
+                    agg.item.SubItems[6].Text = $"{gift.GiftName} x{gift.GiftCount}";
+                    _totalGiftCount += Math.Max(0, gift.GiftCount - agg.count);
+                    _giftAggregates[key] = (agg.item, gift.GiftCount, now);
+                    return;
+                }
+            }
+
+            var item = new ListViewItem(gift.Timestamp.ToString("HH:mm:ss"));
+            var typeText = "礼物";
+            item.SubItems.Add(typeText);
+            item.SubItems.Add(gift.UserName ?? "");
+            item.SubItems.Add(FormatUserId(gift.UserId));
+            item.SubItems.Add(gift.FansClubLevel > 0 ? gift.FansClubLevel.ToString() : "-");
+            item.SubItems.Add(gift.PayGradeLevel > 0 ? gift.PayGradeLevel.ToString() : "-");
+            item.SubItems.Add($"{gift.GiftName} x{gift.GiftCount}");
+            listViewGiftFollow.Items.Add(item);
+            _giftAggregates[key] = (item, gift.GiftCount, now);
+        }
+
+        private void AddOrUpdateWatchedGift(GiftMessage gift)
+        {
+            var key = (gift.UserId ?? "") + "|" + (gift.GiftName ?? "");
+            var now = DateTime.Now;
+            if (_watchedGiftAggregates.TryGetValue(key, out var agg))
+            {
+                if (gift.GiftCount >= agg.count)
+                {
+                    agg.item.SubItems[6].Text = $"{gift.GiftName} x{gift.GiftCount}";
+                    _watchedGiftAggregates[key] = (agg.item, gift.GiftCount, now);
+                    return;
+                }
+            }
+
+            var item = new ListViewItem(gift.Timestamp.ToString("HH:mm:ss"));
+            var typeText = "礼物";
+            item.SubItems.Add(typeText);
+            string displayUserName = GetDisplayUserName(gift.UserId, gift.UserName);
+            item.SubItems.Add(displayUserName);
+            item.SubItems.Add(FormatUserId(gift.UserId));
+            item.SubItems.Add(gift.FansClubLevel > 0 ? gift.FansClubLevel.ToString() : "-");
+            item.SubItems.Add(gift.PayGradeLevel > 0 ? gift.PayGradeLevel.ToString() : "-");
+            item.SubItems.Add($"{gift.GiftName} x{gift.GiftCount}");
+            listViewWatchedUsers.Items.Add(item);
+            _watchedGiftAggregates[key] = (item, gift.GiftCount, now);
         }
 
         /// <summary>
@@ -214,7 +285,7 @@ namespace DouyinDanmu
 
                 // 应用设置到界面
                 textBoxLiveId.Text = _appSettings.LiveId;
-                _watchedUserIds = new List<string>(_appSettings.WatchedUserIds);
+                _watchedUserIds = [.. _appSettings.WatchedUserIds];
                 checkBoxAutoScroll.Checked = _appSettings.AutoScroll;
 
                 // 修复：如果WatchedUserIds为空但UserInfos有数据，从UserInfos恢复WatchedUserIds
@@ -224,7 +295,7 @@ namespace DouyinDanmu
                     && _appSettings.UserInfos.Count > 0
                 )
                 {
-                    _watchedUserIds = new List<string>(_appSettings.UserInfos.Keys);
+                    _watchedUserIds = [.. _appSettings.UserInfos.Keys];
                     UpdateStatus($"从用户信息中恢复了 {_watchedUserIds.Count} 个关注用户");
 
                     // 立即保存修复后的设置
@@ -265,7 +336,7 @@ namespace DouyinDanmu
             {
                 // 更新设置
                 _appSettings.LiveId = textBoxLiveId.Text.Trim();
-                _appSettings.WatchedUserIds = new List<string>(_watchedUserIds);
+                _appSettings.WatchedUserIds = [.. _watchedUserIds];
                 _appSettings.AutoScroll = checkBoxAutoScroll.Checked;
 
                 // 保存窗口状态（只在正常状态下保存位置和大小）
@@ -341,7 +412,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 清空消息列表
         /// </summary>
-        private void buttonClear_Click(object sender, EventArgs e)
+        private void ButtonClear_Click(object sender, EventArgs e)
         {
             var result = MessageBox.Show(
                 "选择清空范围：\n\n是(Y) - 仅清空界面显示\n否(N) - 同时清空数据库数据\n取消 - 不执行清空操作",
@@ -396,7 +467,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 保存日志
         /// </summary>
-        private void buttonSaveLog_Click(object sender, EventArgs e)
+        private void ButtonSaveLog_Click(object sender, EventArgs e)
         {
             try
             {
@@ -412,10 +483,11 @@ namespace DouyinDanmu
                         StringComparison.OrdinalIgnoreCase
                     );
                     var separator = isCSV ? "," : "\t";
-                    var lines = new List<string>();
-
-                    // 添加聊天消息
-                    lines.Add($"=== 聊天消息 ({listViewChat.Items.Count}条) ===");
+                    var lines = new List<string>
+                    {
+                        // 添加聊天消息
+                        $"=== 聊天消息 ({listViewChat.Items.Count}条) ==="
+                    };
                     if (isCSV)
                     {
                         lines.Add("时间,用户,用户ID,粉丝团等级,财富等级,聊天内容");
@@ -830,9 +902,8 @@ namespace DouyinDanmu
             }
 
             // 检查是否有保存的用户信息
-            if (_appSettings.UserInfos != null && _appSettings.UserInfos.ContainsKey(userId))
+            if (_appSettings.UserInfos != null && _appSettings.UserInfos.TryGetValue(userId, out UserInfo? userInfo))
             {
-                var userInfo = _appSettings.UserInfos[userId];
                 if (!string.IsNullOrEmpty(userInfo.Nickname))
                 {
                     // 如果有保存的昵称，使用格式：昵称 (原始用户名)
@@ -863,7 +934,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 格式化用户ID显示
         /// </summary>
-        private string FormatUserId(string? userId)
+        private static string FormatUserId(string? userId)
         {
             if (string.IsNullOrEmpty(userId))
                 return "-";
@@ -877,17 +948,6 @@ namespace DouyinDanmu
         /// </summary>
         private void UpdateStatistics()
         {
-            var totalMessages =
-                listViewChat.Items.Count
-                + listViewMember.Items.Count
-                + listViewGiftFollow.Items.Count
-                + listViewWatchedUsers.Items.Count;
-            labelTotalMessages.Text = $"总计: {totalMessages}";
-            labelChatCount.Text = $"聊天: {listViewChat.Items.Count}";
-            labelGiftCount.Text = $"礼物: {listViewGiftFollow.Items.Count}";
-            labelLikeCount.Text = $"进场: {listViewMember.Items.Count}";
-
-            // 异步更新数据库统计信息
             _ = UpdateDatabaseStatsAsync();
         }
 
@@ -930,7 +990,7 @@ namespace DouyinDanmu
         {
             // 更新状态栏显示数据库统计信息
             var dbStatsText =
-                $"数据库统计 - 聊天:{dbStats.ChatMessageCount} 进场:{dbStats.MemberMessageCount} 互动:{dbStats.InteractionMessageCount} 独立用户:{dbStats.UniqueUserCount}";
+                $"数据库统计 - 聊天:{dbStats.ChatMessageCount} 进场:{dbStats.MemberMessageCount} 礼物:{dbStats.GiftTotalCount} 点赞:{dbStats.LikeTotalCount} 互动行:{dbStats.InteractionMessageCount} 独立用户:{dbStats.UniqueUserCount}";
 
             // 可以考虑添加一个专门的标签来显示数据库统计，或者在状态信息中显示
             // 这里我们在状态信息中显示
@@ -950,24 +1010,6 @@ namespace DouyinDanmu
             }
 
             UpdateStatus(status);
-        }
-
-        /// <summary>
-        /// 获取消息类型文本
-        /// </summary>
-        private string GetMessageTypeText(LiveMessageType type)
-        {
-            return type switch
-            {
-                LiveMessageType.Chat => "聊天",
-                LiveMessageType.Gift => "礼物",
-                LiveMessageType.Like => "点赞",
-                LiveMessageType.Member => "进场",
-                LiveMessageType.Social => "关注",
-                LiveMessageType.Control => "控制",
-                LiveMessageType.RoomStats => "统计",
-                _ => "未知",
-            };
         }
 
         /// <summary>
@@ -1051,7 +1093,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 连接按钮点击事件
         /// </summary>
-        private async void buttonConnect_Click(object sender, EventArgs e)
+        private async void ButtonConnect_Click(object sender, EventArgs e)
         {
             try
             {
@@ -1256,7 +1298,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 直播间ID文本变更事件
         /// </summary>
-        private void textBoxLiveId_TextChanged(object sender, EventArgs e)
+        private void TextBoxLiveId_TextChanged(object sender, EventArgs e)
         {
             // 延迟保存，避免频繁保存
             if (!_isConnected) // 只在未连接状态下自动保存
@@ -1268,7 +1310,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 自动滚动复选框变更事件
         /// </summary>
-        private void checkBoxAutoScroll_CheckedChanged(object sender, EventArgs e)
+        private void CheckBoxAutoScroll_CheckedChanged(object sender, EventArgs e)
         {
             SaveSettings();
         }
@@ -1276,7 +1318,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 显示未知消息类型统计
         /// </summary>
-        private void btnShowUnknownTypes_Click(object sender, EventArgs e)
+        private void BtnShowUnknownTypes_Click(object sender, EventArgs e)
         {
             try
             {
@@ -1326,7 +1368,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 设置按钮点击事件
         /// </summary>
-        private void buttonSettings_Click(object sender, EventArgs e)
+        private void ButtonSettings_Click(object sender, EventArgs e)
         {
             using var settingsForm = new SettingsForm(
                 _watchedUserIds,
@@ -1347,7 +1389,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 数据库按钮点击事件
         /// </summary>
-        private void buttonDatabase_Click(object sender, EventArgs e)
+        private void ButtonDatabase_Click(object sender, EventArgs e)
         {
             if (_databaseService == null)
             {
@@ -1501,7 +1543,7 @@ namespace DouyinDanmu
         /// <summary>
         /// WebSocket按钮点击事件
         /// </summary>
-        private void buttonWebSocket_Click(object sender, EventArgs e)
+        private void ButtonWebSocket_Click(object sender, EventArgs e)
         {
             try
             {
@@ -1512,14 +1554,14 @@ namespace DouyinDanmu
                     _appSettings.WebSocketEnabled = settingsForm.Settings.WebSocketEnabled;
                     _appSettings.WebSocketPort = settingsForm.Settings.WebSocketPort;
                     _appSettings.AutoStartWebSocket = settingsForm.Settings.AutoStartWebSocket;
-                    
+
                     // 保存设置
                     SaveSettings();
-                    
-                    var statusText = _webSocketService?.IsRunning == true 
+
+                    var statusText = _webSocketService?.IsRunning == true
                         ? $"WebSocket设置已更新 - 启用: {_appSettings.WebSocketEnabled}, 端口: {_appSettings.WebSocketPort}, 自动启动: {_appSettings.AutoStartWebSocket} (当前运行中)"
                         : $"WebSocket设置已更新 - 启用: {_appSettings.WebSocketEnabled}, 端口: {_appSettings.WebSocketPort}, 自动启动: {_appSettings.AutoStartWebSocket}";
-                    
+
                     UpdateStatus(statusText);
                 }
             }
@@ -1557,7 +1599,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 右键菜单打开前的事件处理
         /// </summary>
-        private void contextMenuStripMessage_Opening(
+        private void ContextMenuStripMessage_Opening(
             object sender,
             System.ComponentModel.CancelEventArgs e
         )
@@ -1624,7 +1666,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 添加到关注列表菜单项点击事件
         /// </summary>
-        private void toolStripMenuItemAddToWatch_Click(object sender, EventArgs e)
+        private void ToolStripMenuItemAddToWatch_Click(object sender, EventArgs e)
         {
             var listView = GetActiveListView();
             if (listView?.SelectedItems.Count > 0)
@@ -1642,20 +1684,15 @@ namespace DouyinDanmu
                         // 同时保存用户信息到UserInfos
                         if (!string.IsNullOrEmpty(userName) && userName != "-")
                         {
-                            if (_appSettings.UserInfos == null)
-                            {
-                                _appSettings.UserInfos = new Dictionary<string, UserInfo>();
-                            }
+                            _appSettings.UserInfos ??= [];
 
                             // 如果用户信息不存在，创建新的用户信息
-                            if (!_appSettings.UserInfos.ContainsKey(userId))
+                            if (!_appSettings.UserInfos.TryGetValue(userId, out UserInfo? existingUserInfo))
                             {
                                 _appSettings.UserInfos[userId] = new UserInfo(userId, userName);
                             }
                             else
                             {
-                                // 如果已存在但昵称为空，更新昵称
-                                var existingUserInfo = _appSettings.UserInfos[userId];
                                 if (string.IsNullOrEmpty(existingUserInfo.Nickname))
                                 {
                                     existingUserInfo.Nickname = userName;
@@ -1678,7 +1715,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 从关注列表移除菜单项点击事件
         /// </summary>
-        private void toolStripMenuItemRemoveFromWatch_Click(object sender, EventArgs e)
+        private void ToolStripMenuItemRemoveFromWatch_Click(object sender, EventArgs e)
         {
             var listView = GetActiveListView();
             if (listView?.SelectedItems.Count > 0)
@@ -1699,7 +1736,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 复制用户ID菜单项点击事件
         /// </summary>
-        private void toolStripMenuItemCopyUserId_Click(object sender, EventArgs e)
+        private void ToolStripMenuItemCopyUserId_Click(object sender, EventArgs e)
         {
             var listView = GetActiveListView();
             if (listView?.SelectedItems.Count > 0)
@@ -1725,7 +1762,7 @@ namespace DouyinDanmu
         /// <summary>
         /// 复制用户名菜单项点击事件
         /// </summary>
-        private void toolStripMenuItemCopyUserName_Click(object sender, EventArgs e)
+        private void ToolStripMenuItemCopyUserName_Click(object sender, EventArgs e)
         {
             var listView = GetActiveListView();
             if (listView?.SelectedItems.Count > 0)

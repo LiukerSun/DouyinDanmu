@@ -15,7 +15,7 @@ namespace DouyinDanmu.Services
     /// <summary>
     /// 抖音直播抓取器
     /// </summary>
-    public class DouyinLiveFetcher : IDisposable
+    public partial class DouyinLiveFetcher : IDisposable
     {
         private readonly string _liveId;
         private readonly HttpClient _httpClient;
@@ -42,9 +42,9 @@ namespace DouyinDanmu.Services
             _liveId = liveId;
             _httpClient = new HttpClient();
             _signatureGenerator = new SignatureGenerator();
-            
+
             // 设置User-Agent
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", 
+            _httpClient.DefaultRequestHeaders.Add("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         }
 
@@ -65,7 +65,7 @@ namespace DouyinDanmu.Services
                 {
                     foreach (var cookie in cookies)
                     {
-                        var match = Regex.Match(cookie, @"ttwid=([^;]+)");
+                        var match = MyRegex().Match(cookie);
                         if (match.Success)
                         {
                             _ttwid = match.Groups[1].Value;
@@ -96,7 +96,7 @@ namespace DouyinDanmu.Services
                 {
                     foreach (var cookie in cookies)
                     {
-                        var match = Regex.Match(cookie, "__ac_nonce=([^;]+)");
+                        var match = MyRegex1().Match(cookie);
                         if (match.Success)
                         {
                             _acNonce = match.Groups[1].Value;
@@ -128,7 +128,7 @@ namespace DouyinDanmu.Services
 
                 var msToken = SignatureGenerator.GenerateMsToken();
                 var url = $"https://live.douyin.com/{_liveId}";
-                
+
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Add("Cookie", $"ttwid={ttwid}; msToken={msToken}; __ac_nonce=0123407cc00a9e438deb4");
 
@@ -136,11 +136,11 @@ namespace DouyinDanmu.Services
                 response.EnsureSuccessStatusCode();
 
                 var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                var match = Regex.Match(content, @"roomId\\"":\\""(\d+)\\""");
-                
+                var match = MyRegex2().Match(content);
+
                 if (!match.Success)
                 {
-                    match = Regex.Match(content, "\"roomId\"\\s*:\\s*\"(\\d+)\"");
+                    match = MyRegex3().Match(content);
                 }
 
                 if (match.Success)
@@ -167,7 +167,7 @@ namespace DouyinDanmu.Services
                 var roomId = await GetRoomIdAsync().ConfigureAwait(false);
                 var ttwid = await GetTtwidAsync().ConfigureAwait(false);
                 var acNonce = await GetAcNonceAsync().ConfigureAwait(false);
-                
+
                 if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(ttwid) || string.IsNullOrEmpty(acNonce))
                     return false;
 
@@ -225,10 +225,10 @@ namespace DouyinDanmu.Services
             try
             {
                 _cancellationTokenSource = new CancellationTokenSource();
-                
+
                 var roomId = await GetRoomIdAsync().ConfigureAwait(false);
                 var ttwid = await GetTtwidAsync().ConfigureAwait(false);
-                
+
                 if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(ttwid))
                 {
                     throw new InvalidOperationException("无法获取房间信息");
@@ -270,7 +270,7 @@ namespace DouyinDanmu.Services
 
                 _webSocket = new ClientWebSocket();
                 _webSocket.Options.SetRequestHeader("Cookie", $"ttwid={ttwid}");
-                _webSocket.Options.SetRequestHeader("User-Agent", 
+                _webSocket.Options.SetRequestHeader("User-Agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
                 if (_cancellationTokenSource != null)
@@ -281,7 +281,7 @@ namespace DouyinDanmu.Services
                 {
                     await _webSocket.ConnectAsync(new Uri(wssUrl), CancellationToken.None);
                 }
-                
+
                 StatusChanged?.Invoke(this, "WebSocket连接成功");
 
                 // 启动心跳
@@ -322,31 +322,32 @@ namespace DouyinDanmu.Services
         /// <summary>
         /// 创建心跳帧
         /// </summary>
-        private byte[] CreateHeartbeatFrame()
+        private static byte[] CreateHeartbeatFrame()
         {
             // 创建符合抖音协议的心跳帧
             // PushFrame with payload_type='hb'
-            var frame = new
+            _ = new
             {
                 seqId = 1UL,
                 logId = 1UL,
                 service = 1UL,
                 method = 1UL,
                 payloadType = "hb",
-                payload = new byte[0]
+                payload = Array.Empty<byte>()
             };
 
             // 简化的protobuf编码
             // 这里使用简化的方式，实际应该使用正确的protobuf编码
             var payloadTypeBytes = Encoding.UTF8.GetBytes("hb");
-            var result = new List<byte>();
-            
-            // 添加字段7 (payloadType) - string
-            result.Add(0x3A); // field 7, wire type 2 (length-delimited)
-            result.Add((byte)payloadTypeBytes.Length);
+            var result = new List<byte>
+            {
+                // 添加字段7 (payloadType) - string
+                0x3A, // field 7, wire type 2 (length-delimited)
+                (byte)payloadTypeBytes.Length
+            };
             result.AddRange(payloadTypeBytes);
-            
-            return result.ToArray();
+
+            return [.. result];
         }
 
         /// <summary>
@@ -364,7 +365,7 @@ namespace DouyinDanmu.Services
                     try
                     {
                         var result = await _webSocket.ReceiveAsync(
-                            new ArraySegment<byte>(buffer), 
+                            new ArraySegment<byte>(buffer),
                             _cancellationTokenSource.Token).ConfigureAwait(false);
 
                         if (result.MessageType == WebSocketMessageType.Binary)
@@ -404,13 +405,13 @@ namespace DouyinDanmu.Services
             {
                 // 尝试解析为PushFrame
                 var (needAck, ackData, messages) = ProtobufParser.ParseWebSocketMessage(messageData);
-                
+
                 // 如果需要发送ACK
                 if (needAck && ackData != null)
                 {
                     await SendAckMessage(ackData);
                 }
-                
+
                 // 处理解析出的消息
                 foreach (var message in messages)
                 {
@@ -451,12 +452,12 @@ namespace DouyinDanmu.Services
             {
                 _cancellationTokenSource?.Cancel();
                 _heartbeatTimer?.Dispose();
-                
+
                 if (_webSocket?.State == WebSocketState.Open)
                 {
                     await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "停止抓取", CancellationToken.None);
                 }
-                
+
                 StatusChanged?.Invoke(this, "已停止抓取");
             }
             catch (Exception ex)
@@ -477,5 +478,14 @@ namespace DouyinDanmu.Services
                 _disposed = true;
             }
         }
+
+        [GeneratedRegex(@"ttwid=([^;]+)")]
+        private static partial Regex MyRegex();
+        [GeneratedRegex("__ac_nonce=([^;]+)")]
+        private static partial Regex MyRegex1();
+        [GeneratedRegex(@"roomId\\"":\\""(\d+)\\""")]
+        private static partial Regex MyRegex2();
+        [GeneratedRegex("\"roomId\"\\s*:\\s*\"(\\d+)\"")]
+        private static partial Regex MyRegex3();
     }
-} 
+}

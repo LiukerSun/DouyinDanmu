@@ -66,7 +66,7 @@ namespace DouyinDanmu
             this.buttonStartStop.TabIndex = 5;
             this.buttonStartStop.Text = "启动服务";
             this.buttonStartStop.UseVisualStyleBackColor = true;
-            this.buttonStartStop.Click += new System.EventHandler(this.buttonStartStop_Click);
+            this.buttonStartStop.Click += new System.EventHandler(this.ButtonStartStop_Click);
             // 
             // buttonTest
             // 
@@ -76,7 +76,7 @@ namespace DouyinDanmu
             this.buttonTest.TabIndex = 4;
             this.buttonTest.Text = "测试连接";
             this.buttonTest.UseVisualStyleBackColor = true;
-            this.buttonTest.Click += new System.EventHandler(this.buttonTest_Click);
+            this.buttonTest.Click += new System.EventHandler(this.ButtonTest_Click);
             // 
             // checkBoxAutoStart
             // 
@@ -87,7 +87,7 @@ namespace DouyinDanmu
             this.checkBoxAutoStart.TabIndex = 3;
             this.checkBoxAutoStart.Text = "连接直播间时自动启动WebSocket";
             this.checkBoxAutoStart.UseVisualStyleBackColor = true;
-            this.checkBoxAutoStart.CheckedChanged += new System.EventHandler(this.checkBoxAutoStart_CheckedChanged);
+            this.checkBoxAutoStart.CheckedChanged += new System.EventHandler(this.CheckBoxAutoStart_CheckedChanged);
             // 
             // numericUpDownPort
             // 
@@ -110,7 +110,7 @@ namespace DouyinDanmu
             0,
             0,
             0});
-            this.numericUpDownPort.ValueChanged += new System.EventHandler(this.numericUpDownPort_ValueChanged);
+            this.numericUpDownPort.ValueChanged += new System.EventHandler(this.NumericUpDownPort_ValueChanged);
             // 
             // labelPort
             // 
@@ -130,7 +130,7 @@ namespace DouyinDanmu
             this.checkBoxEnableWebSocket.TabIndex = 0;
             this.checkBoxEnableWebSocket.Text = "启用WebSocket服务";
             this.checkBoxEnableWebSocket.UseVisualStyleBackColor = true;
-            this.checkBoxEnableWebSocket.CheckedChanged += new System.EventHandler(this.checkBoxEnableWebSocket_CheckedChanged);
+            this.checkBoxEnableWebSocket.CheckedChanged += new System.EventHandler(this.CheckBoxEnableWebSocket_CheckedChanged);
             // 
             // labelStatus
             // 
@@ -158,7 +158,7 @@ namespace DouyinDanmu
             this.buttonOK.TabIndex = 2;
             this.buttonOK.Text = "确定";
             this.buttonOK.UseVisualStyleBackColor = true;
-            this.buttonOK.Click += new System.EventHandler(this.buttonOK_Click);
+            this.buttonOK.Click += new System.EventHandler(this.ButtonOK_Click);
             // 
             // buttonCancel
             // 
@@ -168,7 +168,7 @@ namespace DouyinDanmu
             this.buttonCancel.TabIndex = 3;
             this.buttonCancel.Text = "取消";
             this.buttonCancel.UseVisualStyleBackColor = true;
-            this.buttonCancel.Click += new System.EventHandler(this.buttonCancel_Click);
+            this.buttonCancel.Click += new System.EventHandler(this.ButtonCancel_Click);
             // 
             // WebSocketSettingsForm
             // 
@@ -211,4 +211,4 @@ namespace DouyinDanmu
         private System.Windows.Forms.Button buttonStartStop;
         private System.Windows.Forms.Label labelStatus;
     }
-} 
+}

@@ -50,11 +50,6 @@ partial class Form1
         this.listViewWatchedUsers = new System.Windows.Forms.ListView();
         this.groupBoxStatus = new System.Windows.Forms.GroupBox();
         this.textBoxStatus = new System.Windows.Forms.TextBox();
-        this.groupBoxStats = new System.Windows.Forms.GroupBox();
-        this.labelGiftCount = new System.Windows.Forms.Label();
-        this.labelLikeCount = new System.Windows.Forms.Label();
-        this.labelChatCount = new System.Windows.Forms.Label();
-        this.labelTotalMessages = new System.Windows.Forms.Label();
         this.columnHeaderChatTime = new System.Windows.Forms.ColumnHeader();
         this.columnHeaderChatUser = new System.Windows.Forms.ColumnHeader();
         this.columnHeaderChatUserId = new System.Windows.Forms.ColumnHeader();
@@ -90,13 +85,12 @@ partial class Form1
         this.groupBoxConnection.SuspendLayout();
         this.groupBoxMessages.SuspendLayout();
         this.groupBoxStatus.SuspendLayout();
-        this.groupBoxStats.SuspendLayout();
         this.contextMenuStripMessage.SuspendLayout();
         this.SuspendLayout();
         // 
         // groupBoxConnection
         // 
-        this.groupBoxConnection.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+        this.groupBoxConnection.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
         | System.Windows.Forms.AnchorStyles.Right)));
         this.groupBoxConnection.Controls.Add(this.buttonDatabase);
         this.groupBoxConnection.Controls.Add(this.buttonSettings);
@@ -119,7 +113,7 @@ partial class Form1
         this.buttonDatabase.TabIndex = 4;
         this.buttonDatabase.Text = "数据库";
         this.buttonDatabase.UseVisualStyleBackColor = true;
-        this.buttonDatabase.Click += new System.EventHandler(this.buttonDatabase_Click);
+        this.buttonDatabase.Click += new System.EventHandler(this.ButtonDatabase_Click);
         // 
         // buttonSettings
         // 
@@ -129,7 +123,7 @@ partial class Form1
         this.buttonSettings.TabIndex = 3;
         this.buttonSettings.Text = "设置";
         this.buttonSettings.UseVisualStyleBackColor = true;
-        this.buttonSettings.Click += new System.EventHandler(this.buttonSettings_Click);
+        this.buttonSettings.Click += new System.EventHandler(this.ButtonSettings_Click);
         // 
         // buttonWebSocket
         // 
@@ -139,7 +133,7 @@ partial class Form1
         this.buttonWebSocket.TabIndex = 2;
         this.buttonWebSocket.Text = "WebSocket";
         this.buttonWebSocket.UseVisualStyleBackColor = true;
-        this.buttonWebSocket.Click += new System.EventHandler(this.buttonWebSocket_Click);
+        this.buttonWebSocket.Click += new System.EventHandler(this.ButtonWebSocket_Click);
         // 
         // buttonConnect
         // 
@@ -149,7 +143,7 @@ partial class Form1
         this.buttonConnect.TabIndex = 2;
         this.buttonConnect.Text = "连接";
         this.buttonConnect.UseVisualStyleBackColor = true;
-        this.buttonConnect.Click += new System.EventHandler(this.buttonConnect_Click);
+        this.buttonConnect.Click += new System.EventHandler(this.ButtonConnect_Click);
         // 
         // labelLiveId
         // 
@@ -167,12 +161,12 @@ partial class Form1
         this.textBoxLiveId.Size = new System.Drawing.Size(280, 23);
         this.textBoxLiveId.TabIndex = 1;
         this.textBoxLiveId.Text = "MS4wLjABAAAA";
-        this.textBoxLiveId.TextChanged += new System.EventHandler(this.textBoxLiveId_TextChanged);
+        this.textBoxLiveId.TextChanged += new System.EventHandler(this.TextBoxLiveId_TextChanged);
         // 
         // groupBoxMessages
         // 
-        this.groupBoxMessages.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-        | System.Windows.Forms.AnchorStyles.Left) 
+        this.groupBoxMessages.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+        | System.Windows.Forms.AnchorStyles.Left)
         | System.Windows.Forms.AnchorStyles.Right)));
         this.groupBoxMessages.Controls.Add(this.buttonSaveLog);
         this.groupBoxMessages.Controls.Add(this.buttonClear);
@@ -197,7 +191,7 @@ partial class Form1
         this.buttonSaveLog.TabIndex = 3;
         this.buttonSaveLog.Text = "保存日志";
         this.buttonSaveLog.UseVisualStyleBackColor = true;
-        this.buttonSaveLog.Click += new System.EventHandler(this.buttonSaveLog_Click);
+        this.buttonSaveLog.Click += new System.EventHandler(this.ButtonSaveLog_Click);
         // 
         // buttonClear
         // 
@@ -207,7 +201,7 @@ partial class Form1
         this.buttonClear.TabIndex = 2;
         this.buttonClear.Text = "清空";
         this.buttonClear.UseVisualStyleBackColor = true;
-        this.buttonClear.Click += new System.EventHandler(this.buttonClear_Click);
+        this.buttonClear.Click += new System.EventHandler(this.ButtonClear_Click);
         // 
         // buttonShowUnknownTypes
         // 
@@ -217,7 +211,7 @@ partial class Form1
         this.buttonShowUnknownTypes.TabIndex = 4;
         this.buttonShowUnknownTypes.Text = "未知类型统计";
         this.buttonShowUnknownTypes.UseVisualStyleBackColor = true;
-        this.buttonShowUnknownTypes.Click += new System.EventHandler(this.btnShowUnknownTypes_Click);
+        this.buttonShowUnknownTypes.Click += new System.EventHandler(this.BtnShowUnknownTypes_Click);
         // 
         // checkBoxAutoScroll
         // 
@@ -230,7 +224,7 @@ partial class Form1
         this.checkBoxAutoScroll.TabIndex = 1;
         this.checkBoxAutoScroll.Text = "自动滚动";
         this.checkBoxAutoScroll.UseVisualStyleBackColor = true;
-        this.checkBoxAutoScroll.CheckedChanged += new System.EventHandler(this.checkBoxAutoScroll_CheckedChanged);
+        this.checkBoxAutoScroll.CheckedChanged += new System.EventHandler(this.CheckBoxAutoScroll_CheckedChanged);
         // 
         // groupBoxChat
         // 
@@ -328,7 +322,7 @@ partial class Form1
         this.groupBoxWatchedUsers.Size = new System.Drawing.Size(390, 310);
         this.groupBoxWatchedUsers.TabIndex = 8;
         this.groupBoxWatchedUsers.TabStop = false;
-        this.groupBoxWatchedUsers.Text = "观看用户";
+        this.groupBoxWatchedUsers.Text = "关注用户";
         // 
         // listViewWatchedUsers
         // 
@@ -482,7 +476,7 @@ partial class Form1
         // 
         // groupBoxStatus
         // 
-        this.groupBoxStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+        this.groupBoxStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)
         | System.Windows.Forms.AnchorStyles.Right)));
         this.groupBoxStatus.Controls.Add(this.textBoxStatus);
         this.groupBoxStatus.Location = new System.Drawing.Point(12, 504);
@@ -494,8 +488,8 @@ partial class Form1
         // 
         // textBoxStatus
         // 
-        this.textBoxStatus.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-        | System.Windows.Forms.AnchorStyles.Left) 
+        this.textBoxStatus.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+        | System.Windows.Forms.AnchorStyles.Left)
         | System.Windows.Forms.AnchorStyles.Right)));
         this.textBoxStatus.Location = new System.Drawing.Point(15, 22);
         this.textBoxStatus.Multiline = true;
@@ -505,55 +499,6 @@ partial class Form1
         this.textBoxStatus.Size = new System.Drawing.Size(770, 50);
         this.textBoxStatus.TabIndex = 0;
         // 
-        // groupBoxStats
-        // 
-        this.groupBoxStats.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-        this.groupBoxStats.Controls.Add(this.labelGiftCount);
-        this.groupBoxStats.Controls.Add(this.labelLikeCount);
-        this.groupBoxStats.Controls.Add(this.labelChatCount);
-        this.groupBoxStats.Controls.Add(this.labelTotalMessages);
-        this.groupBoxStats.Location = new System.Drawing.Point(818, 504);
-        this.groupBoxStats.Name = "groupBoxStats";
-        this.groupBoxStats.Size = new System.Drawing.Size(394, 80);
-        this.groupBoxStats.TabIndex = 3;
-        this.groupBoxStats.TabStop = false;
-        this.groupBoxStats.Text = "统计信息";
-        // 
-        // labelGiftCount
-        // 
-        this.labelGiftCount.AutoSize = true;
-        this.labelGiftCount.Location = new System.Drawing.Point(200, 50);
-        this.labelGiftCount.Name = "labelGiftCount";
-        this.labelGiftCount.Size = new System.Drawing.Size(56, 17);
-        this.labelGiftCount.TabIndex = 3;
-        this.labelGiftCount.Text = "礼物: 0";
-        // 
-        // labelLikeCount
-        // 
-        this.labelLikeCount.AutoSize = true;
-        this.labelLikeCount.Location = new System.Drawing.Point(15, 50);
-        this.labelLikeCount.Name = "labelLikeCount";
-        this.labelLikeCount.Size = new System.Drawing.Size(56, 17);
-        this.labelLikeCount.TabIndex = 2;
-        this.labelLikeCount.Text = "进场: 0";
-        // 
-        // labelChatCount
-        // 
-        this.labelChatCount.AutoSize = true;
-        this.labelChatCount.Location = new System.Drawing.Point(200, 25);
-        this.labelChatCount.Name = "labelChatCount";
-        this.labelChatCount.Size = new System.Drawing.Size(56, 17);
-        this.labelChatCount.TabIndex = 1;
-        this.labelChatCount.Text = "聊天: 0";
-        // 
-        // labelTotalMessages
-        // 
-        this.labelTotalMessages.AutoSize = true;
-        this.labelTotalMessages.Location = new System.Drawing.Point(15, 25);
-        this.labelTotalMessages.Name = "labelTotalMessages";
-        this.labelTotalMessages.Size = new System.Drawing.Size(56, 17);
-        this.labelTotalMessages.TabIndex = 0;
-        this.labelTotalMessages.Text = "总计: 0";
         // 
         // contextMenuStripMessage
         // 
@@ -565,21 +510,21 @@ partial class Form1
         this.toolStripMenuItemCopyUserName});
         this.contextMenuStripMessage.Name = "contextMenuStripMessage";
         this.contextMenuStripMessage.Size = new System.Drawing.Size(181, 114);
-        this.contextMenuStripMessage.Opening += new System.ComponentModel.CancelEventHandler(this.contextMenuStripMessage_Opening);
+        this.contextMenuStripMessage.Opening += new System.ComponentModel.CancelEventHandler(this.ContextMenuStripMessage_Opening);
         // 
         // toolStripMenuItemAddToWatch
         // 
         this.toolStripMenuItemAddToWatch.Name = "toolStripMenuItemAddToWatch";
         this.toolStripMenuItemAddToWatch.Size = new System.Drawing.Size(180, 22);
         this.toolStripMenuItemAddToWatch.Text = "添加到关注列表";
-        this.toolStripMenuItemAddToWatch.Click += new System.EventHandler(this.toolStripMenuItemAddToWatch_Click);
+        this.toolStripMenuItemAddToWatch.Click += new System.EventHandler(this.ToolStripMenuItemAddToWatch_Click);
         // 
         // toolStripMenuItemRemoveFromWatch
         // 
         this.toolStripMenuItemRemoveFromWatch.Name = "toolStripMenuItemRemoveFromWatch";
         this.toolStripMenuItemRemoveFromWatch.Size = new System.Drawing.Size(180, 22);
         this.toolStripMenuItemRemoveFromWatch.Text = "从关注列表移除";
-        this.toolStripMenuItemRemoveFromWatch.Click += new System.EventHandler(this.toolStripMenuItemRemoveFromWatch_Click);
+        this.toolStripMenuItemRemoveFromWatch.Click += new System.EventHandler(this.ToolStripMenuItemRemoveFromWatch_Click);
         // 
         // toolStripSeparator1
         // 
@@ -591,21 +536,20 @@ partial class Form1
         this.toolStripMenuItemCopyUserId.Name = "toolStripMenuItemCopyUserId";
         this.toolStripMenuItemCopyUserId.Size = new System.Drawing.Size(180, 22);
         this.toolStripMenuItemCopyUserId.Text = "复制用户ID";
-        this.toolStripMenuItemCopyUserId.Click += new System.EventHandler(this.toolStripMenuItemCopyUserId_Click);
+        this.toolStripMenuItemCopyUserId.Click += new System.EventHandler(this.ToolStripMenuItemCopyUserId_Click);
         // 
         // toolStripMenuItemCopyUserName
         // 
         this.toolStripMenuItemCopyUserName.Name = "toolStripMenuItemCopyUserName";
         this.toolStripMenuItemCopyUserName.Size = new System.Drawing.Size(180, 22);
         this.toolStripMenuItemCopyUserName.Text = "复制用户名";
-        this.toolStripMenuItemCopyUserName.Click += new System.EventHandler(this.toolStripMenuItemCopyUserName_Click);
+        this.toolStripMenuItemCopyUserName.Click += new System.EventHandler(this.ToolStripMenuItemCopyUserName_Click);
         // 
         // Form1
         // 
         this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
         this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
         this.ClientSize = new System.Drawing.Size(1600, 596);
-        this.Controls.Add(this.groupBoxStats);
         this.Controls.Add(this.groupBoxStatus);
         this.Controls.Add(this.groupBoxMessages);
         this.Controls.Add(this.groupBoxConnection);
@@ -622,8 +566,6 @@ partial class Form1
         this.groupBoxMessages.PerformLayout();
         this.groupBoxStatus.ResumeLayout(false);
         this.groupBoxStatus.PerformLayout();
-        this.groupBoxStats.ResumeLayout(false);
-        this.groupBoxStats.PerformLayout();
         this.contextMenuStripMessage.ResumeLayout(false);
         this.ResumeLayout(false);
     }
@@ -652,11 +594,7 @@ partial class Form1
     private System.Windows.Forms.ListView listViewWatchedUsers;
     private System.Windows.Forms.GroupBox groupBoxStatus;
     private System.Windows.Forms.TextBox textBoxStatus;
-    private System.Windows.Forms.GroupBox groupBoxStats;
-    private System.Windows.Forms.Label labelGiftCount;
-    private System.Windows.Forms.Label labelLikeCount;
-    private System.Windows.Forms.Label labelChatCount;
-    private System.Windows.Forms.Label labelTotalMessages;
+
     private System.Windows.Forms.ColumnHeader columnHeaderChatTime;
     private System.Windows.Forms.ColumnHeader columnHeaderChatUser;
     private System.Windows.Forms.ColumnHeader columnHeaderChatUserId;

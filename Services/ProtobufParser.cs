@@ -194,10 +194,11 @@ namespace DouyinDanmu.Services
         /// </summary>
         private static byte[] CreateAckFrame(ulong logId, string internalExt)
         {
-            var result = new List<byte>();
-
-            // logId (field 2)
-            result.Add(0x10); // field 2, wire type 0 (varint)
+            var result = new List<byte>
+            {
+                // logId (field 2)
+                0x10 // field 2, wire type 0 (varint)
+            };
             result.AddRange(EncodeVarint(logId));
 
             // payloadType (field 7)
@@ -212,7 +213,7 @@ namespace DouyinDanmu.Services
             result.AddRange(EncodeVarint((ulong)payloadBytes.Length));
             result.AddRange(payloadBytes);
 
-            return result.ToArray();
+            return [.. result];
         }
 
         /// <summary>
@@ -1015,7 +1016,7 @@ namespace DouyinDanmu.Services
             }
             result.Add((byte)value);
             
-            return result.ToArray();
+            return [.. result];
         }
 
         /// <summary>

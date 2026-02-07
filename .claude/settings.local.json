@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(git clone:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(dotnet build:*)",
+      "Bash(del \"E:\\\\Project\\\\DouyinDanmu\\\\Services\\\\MultiRoomConnectionManager.cs\")",
+      "Bash(dotnet clean)",
+      "Bash(start \"抖音直播弹幕采集工具\" \"DouyinDanmu.exe\")"
+    ]
+  }
+}

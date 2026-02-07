@@ -3,20 +3,21 @@
 [![.NET](https://img.shields.io/badge/.NET-8.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-Educational-green.svg)](#许可证)
-[![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)](#版本历史)
+[![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)](#版本历史)
 
-一个基于 C# .NET 8.0 和 WinForms 开发的抖音直播弹幕实时采集工具，支持实时抓取、数据库存储、智能过滤和数据导出。
+一个基于 C# .NET 8.0 和 WinForms 开发的抖音直播弹幕实时采集工具，支持**多房间同时采集**、实时抓取、数据库存储、智能过滤和数据导出。
 
 ## ✨ 核心功能
 
 ### 🔄 实时采集
+- **多房间支持** - 同时连接并采集多个直播间的弹幕消息
 - **WebSocket连接** - 通过WebSocket实时接收抖音直播间消息
 - **多类型消息** - 支持聊天、礼物、点赞、进场、关注等多种消息类型
-- **自动重连** - 网络异常时自动重连，保证数据采集的连续性
-- **JavaScript签名** - 集成JavaScript引擎生成请求签名
+- **智能重连** - 网络异常时自动重连，支持指数退避策略
+- **签名生成** - 集成JavaScript引擎生成a_bogus和__ac_signature签名
 
 ### 💾 数据管理
-- **SQLite数据库** - 本地数据库持久化存储所有消息
+- **SQLite数据库** - 本地数据库持久化存储所有消息，支持多房间数据隔离
 - **批量操作** - 优化的批量插入和查询，提升性能
 - **数据导出** - 支持TXT/CSV格式导出，包含完整统计信息
 - **历史查询** - 内置数据库查询界面，支持条件筛选
@@ -38,20 +39,21 @@
 ```
 DouyinDanmu/
 ├── Models/                 # 数据模型层
-│   ├── LiveMessage.cs     # 消息模型定义
-│   ├── AppConfig.cs       # 配置模型
-│   ├── AppSettings.cs     # 应用设置
-│   └── UserInfo.cs        # 用户信息模型
+│   ├── LiveMessage.cs         # 消息模型定义
+│   ├── AppConfig.cs           # 配置模型
+│   ├── AppSettings.cs         # 应用设置
+│   ├── NetworkSettings.cs     # 网络配置模型
+│   └── UserInfo.cs            # 用户信息模型
 ├── Services/              # 服务层
 │   ├── DouyinLiveFetcher.cs    # 核心抓取服务
-│   ├── DatabaseService.cs     # 数据库服务
-│   ├── SignatureGenerator.cs  # 签名生成服务
-│   ├── ProtobufParser.cs      # Protobuf解析服务
-│   ├── ConnectionManager.cs   # 连接管理服务
-│   ├── UIUpdateService.cs     # UI更新服务
-│   ├── PerformanceMonitor.cs  # 性能监控服务
-│   ├── LoggingService.cs      # 日志服务
-│   └── SettingsManager.cs    # 设置管理服务
+│   ├── ConnectionManager.cs    # 多房间连接管理服务
+│   ├── DatabaseService.cs      # 数据库服务
+│   ├── SignatureGenerator.cs   # 签名生成服务 (a_bogus/__ac_signature)
+│   ├── ProtobufParser.cs       # Protobuf解析服务
+│   ├── UIUpdateService.cs      # UI更新服务
+│   ├── PerformanceMonitor.cs   # 性能监控服务
+│   ├── LoggingService.cs       # 结构化日志服务
+│   └── SettingsManager.cs      # 设置管理服务
 ├── UI层/
 │   ├── Form1.cs              # 主窗体
 │   ├── SettingsForm.cs       # 设置窗体
@@ -62,10 +64,11 @@ DouyinDanmu/
 ### 核心技术栈
 - **UI框架**: WinForms (.NET 8.0)
 - **数据库**: SQLite + Microsoft.Data.Sqlite
-- **网络通信**: WebSocket + HttpClient
-- **JavaScript引擎**: Microsoft.ClearScript.V8
-- **JSON处理**: System.Text.Json
-- **测试框架**: xUnit + Moq + FluentAssertions
+- **网络通信**: WebSocket (ClientWebSocket) + HttpClient
+- **JavaScript引擎**: Microsoft.ClearScript.V8 (用于签名生成)
+- **JSON处理**: System.Text.Json + Newtonsoft.Json
+- **Protobuf**: 自定义解析器处理抖音消息协议
+- **内存优化**: ArrayPool、内存池、批量处理
 
 ### 性能优化
 - **内存池**: 使用ArrayPool减少内存分配
@@ -109,13 +112,14 @@ dotnet run
 1. 运行 `DouyinDanmu.exe`
 2. 输入抖音直播间ID（支持直播间URL或纯数字ID）
 3. 点击"连接"开始采集
-4. 在不同标签页查看分类消息：
+4. **多房间支持**：可以同时连接多个直播间进行采集
+5. 在不同标签页查看分类消息：
    - **聊天** - 用户发送的文字消息
    - **礼物/关注** - 礼物和关注消息
    - **进场** - 用户进入直播间消息
    - **关注用户** - 已关注用户的消息
-5. 右键用户名可添加关注
-6. 使用"保存日志"导出数据
+6. 右键用户名可添加关注
+7. 使用"保存日志"导出数据
 
 ## 📋 支持的消息类型
 
@@ -151,6 +155,8 @@ dotnet run
 - **重连间隔**: 1-30秒
 - **最大重连次数**: 0-10次
 - **心跳间隔**: 10-120秒
+- **最大并发房间数**: 1-10个房间
+- **指数退避重连**: 启用后重连间隔会逐渐增加
 
 ### 数据库设置
 - **批量插入大小**: 10-1000条
@@ -200,7 +206,15 @@ dotnet test --collect:"XPlat Code Coverage"
 
 ## 🔄 版本历史
 
-### v1.5.0 - 当前版本
+### v1.6.0 - 当前版本
+- ✅ **多房间支持** - 同时连接并采集多个直播间的弹幕消息
+- ✅ **连接管理重构** - 全新的ConnectionManager架构，支持独立的房间连接管理
+- ✅ **a_bogus签名** - 集成JavaScript引擎生成a_bogus签名
+- ✅ **连接状态优化** - 细粒度的连接状态管理（连接中、已连接、重连中、失败等）
+- ✅ **共享签名生成器** - 多房间共享同一签名生成器，提升性能
+- ✅ **向后兼容** - 保持与单房间模式的完全兼容
+
+### v1.5.0
 - ✅ 完整的分层架构重构
 - ✅ 新增配置管理系统
 - ✅ 实现结构化日志系统

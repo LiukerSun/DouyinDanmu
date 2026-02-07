@@ -8,9 +8,14 @@ namespace DouyinDanmu.Models
     public class AppSettings
     {
         /// <summary>
-        /// 直播间ID
+        /// 直播间ID（向后兼容，单房间模式）
         /// </summary>
         public string LiveId { get; set; } = "";
+
+        /// <summary>
+        /// 多直播间配置列表
+        /// </summary>
+        public List<RoomConfig> LiveRooms { get; set; } = new List<RoomConfig>();
 
         /// <summary>
         /// 关注的用户ID列表

@@ -28,6 +28,7 @@ namespace DouyinDanmu.Models
     {
         public LiveMessageType Type { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.Now;
+        public string RoomId { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
         public string UserId { get; set; } = string.Empty;
         public string UserName { get; set; } = string.Empty;

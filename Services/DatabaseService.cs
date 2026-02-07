@@ -25,7 +25,6 @@ namespace DouyinDanmu.Services
         private readonly SemaphoreSlim _batchSemaphore = new(1, 1);
         private const int BatchSize = 100;
         private const int BatchIntervalMs = 1000;
-        private string _currentLiveId = string.Empty;
 
         public DatabaseService()
         {
@@ -64,18 +63,13 @@ namespace DouyinDanmu.Services
         }
 
         /// <summary>
-        /// 设置当前直播间ID
-        /// </summary>
-        public void SetCurrentLiveId(string liveId)
-        {
-            _currentLiveId = liveId;
-        }
-
-        /// <summary>
         /// 批量保存消息（异步队列）
         /// </summary>
         public void QueueMessage(LiveMessage message)
         {
+            if (string.IsNullOrEmpty(message.RoomId))
+                return;
+
             _pendingMessages.Enqueue(message);
         }
 
@@ -84,14 +78,14 @@ namespace DouyinDanmu.Services
         /// </summary>
         private async void ProcessBatchMessages(object? state)
         {
-            if (_pendingMessages.IsEmpty || string.IsNullOrEmpty(_currentLiveId))
+            if (_pendingMessages.IsEmpty)
                 return;
 
             await _batchSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
                 var messagesToProcess = new List<LiveMessage>();
-                
+
                 // 取出待处理的消息
                 for (int i = 0; i < BatchSize && _pendingMessages.TryDequeue(out var message); i++)
                 {
@@ -100,7 +94,12 @@ namespace DouyinDanmu.Services
 
                 if (messagesToProcess.Count > 0)
                 {
-                    await SaveMessagesBatchAsync(_currentLiveId, messagesToProcess).ConfigureAwait(false);
+                    // 按 RoomId 分组，分别批量插入
+                    var groupedMessages = messagesToProcess.GroupBy(m => m.RoomId);
+                    foreach (var group in groupedMessages)
+                    {
+                        await SaveMessagesBatchAsync(group.Key, group.ToList()).ConfigureAwait(false);
+                    }
                 }
             }
             finally

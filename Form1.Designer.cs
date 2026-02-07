@@ -28,17 +28,19 @@ partial class Form1
     /// </summary>
     private void InitializeComponent()
     {
-        this.groupBoxConnection = new System.Windows.Forms.GroupBox();
-        this.buttonDatabase = new System.Windows.Forms.Button();
-        this.buttonSettings = new System.Windows.Forms.Button();
-        this.buttonWebSocket = new System.Windows.Forms.Button();
-        this.buttonConnect = new System.Windows.Forms.Button();
+        this.panelConnection = new System.Windows.Forms.Panel();
+        this.tableLayoutPanelConnection = new System.Windows.Forms.TableLayoutPanel();
+        this.panelInputArea = new System.Windows.Forms.Panel();
         this.labelLiveId = new System.Windows.Forms.Label();
         this.textBoxLiveId = new System.Windows.Forms.TextBox();
+        this.flowLayoutPanelButtons = new System.Windows.Forms.FlowLayoutPanel();
+        this.buttonConnect = new System.Windows.Forms.Button();
+        this.buttonWebSocket = new System.Windows.Forms.Button();
+        this.buttonSettings = new System.Windows.Forms.Button();
+        this.buttonDatabase = new System.Windows.Forms.Button();
         this.groupBoxMessages = new System.Windows.Forms.GroupBox();
         this.buttonSaveLog = new System.Windows.Forms.Button();
         this.buttonClear = new System.Windows.Forms.Button();
-        this.buttonShowUnknownTypes = new System.Windows.Forms.Button();
         this.checkBoxAutoScroll = new System.Windows.Forms.CheckBox();
         this.groupBoxChat = new System.Windows.Forms.GroupBox();
         this.listViewChat = new System.Windows.Forms.ListView();
@@ -82,162 +84,225 @@ partial class Form1
         this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
         this.toolStripMenuItemCopyUserId = new System.Windows.Forms.ToolStripMenuItem();
         this.toolStripMenuItemCopyUserName = new System.Windows.Forms.ToolStripMenuItem();
-        this.groupBoxConnection.SuspendLayout();
+        this.panelConnection.SuspendLayout();
+        this.tableLayoutPanelConnection.SuspendLayout();
+        this.panelInputArea.SuspendLayout();
+        this.flowLayoutPanelButtons.SuspendLayout();
         this.groupBoxMessages.SuspendLayout();
         this.groupBoxStatus.SuspendLayout();
         this.contextMenuStripMessage.SuspendLayout();
         this.SuspendLayout();
-        // 
-        // groupBoxConnection
-        // 
-        this.groupBoxConnection.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
-        | System.Windows.Forms.AnchorStyles.Right)));
-        this.groupBoxConnection.Controls.Add(this.buttonDatabase);
-        this.groupBoxConnection.Controls.Add(this.buttonSettings);
-        this.groupBoxConnection.Controls.Add(this.buttonWebSocket);
-        this.groupBoxConnection.Controls.Add(this.buttonConnect);
-        this.groupBoxConnection.Controls.Add(this.labelLiveId);
-        this.groupBoxConnection.Controls.Add(this.textBoxLiveId);
-        this.groupBoxConnection.Location = new System.Drawing.Point(12, 12);
-        this.groupBoxConnection.Name = "groupBoxConnection";
-        this.groupBoxConnection.Size = new System.Drawing.Size(1576, 80);
-        this.groupBoxConnection.TabIndex = 0;
-        this.groupBoxConnection.TabStop = false;
-        this.groupBoxConnection.Text = "连接设置";
-        // 
-        // buttonDatabase
-        // 
-        this.buttonDatabase.Location = new System.Drawing.Point(640, 45);
-        this.buttonDatabase.Name = "buttonDatabase";
-        this.buttonDatabase.Size = new System.Drawing.Size(80, 25);
-        this.buttonDatabase.TabIndex = 4;
-        this.buttonDatabase.Text = "数据库";
-        this.buttonDatabase.UseVisualStyleBackColor = true;
-        this.buttonDatabase.Click += new System.EventHandler(this.ButtonDatabase_Click);
-        // 
-        // buttonSettings
-        // 
-        this.buttonSettings.Location = new System.Drawing.Point(550, 45);
-        this.buttonSettings.Name = "buttonSettings";
-        this.buttonSettings.Size = new System.Drawing.Size(80, 25);
-        this.buttonSettings.TabIndex = 3;
-        this.buttonSettings.Text = "设置";
-        this.buttonSettings.UseVisualStyleBackColor = true;
-        this.buttonSettings.Click += new System.EventHandler(this.ButtonSettings_Click);
-        // 
-        // buttonWebSocket
-        // 
-        this.buttonWebSocket.Location = new System.Drawing.Point(460, 45);
-        this.buttonWebSocket.Name = "buttonWebSocket";
-        this.buttonWebSocket.Size = new System.Drawing.Size(80, 25);
-        this.buttonWebSocket.TabIndex = 2;
-        this.buttonWebSocket.Text = "WebSocket";
-        this.buttonWebSocket.UseVisualStyleBackColor = true;
-        this.buttonWebSocket.Click += new System.EventHandler(this.ButtonWebSocket_Click);
-        // 
-        // buttonConnect
-        // 
-        this.buttonConnect.Location = new System.Drawing.Point(370, 45);
-        this.buttonConnect.Name = "buttonConnect";
-        this.buttonConnect.Size = new System.Drawing.Size(80, 25);
-        this.buttonConnect.TabIndex = 2;
-        this.buttonConnect.Text = "连接";
-        this.buttonConnect.UseVisualStyleBackColor = true;
-        this.buttonConnect.Click += new System.EventHandler(this.ButtonConnect_Click);
-        // 
-        // labelLiveId
-        // 
+        //
+        // panelConnection - 现代化浅色背景
+        //
+        this.panelConnection.BackColor = System.Drawing.Color.FromArgb(248, 249, 250);
+        this.panelConnection.Controls.Add(this.tableLayoutPanelConnection);
+        this.panelConnection.Dock = System.Windows.Forms.DockStyle.Top;
+        this.panelConnection.Location = new System.Drawing.Point(0, 0);
+        this.panelConnection.Name = "panelConnection";
+        this.panelConnection.Size = new System.Drawing.Size(1600, 60);
+        this.panelConnection.TabIndex = 0;
+        //
+        // tableLayoutPanelConnection
+        //
+        this.tableLayoutPanelConnection.ColumnCount = 2;
+        this.tableLayoutPanelConnection.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 420F));
+        this.tableLayoutPanelConnection.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+        this.tableLayoutPanelConnection.Controls.Add(this.panelInputArea, 0, 0);
+        this.tableLayoutPanelConnection.Controls.Add(this.flowLayoutPanelButtons, 1, 0);
+        this.tableLayoutPanelConnection.Dock = System.Windows.Forms.DockStyle.Fill;
+        this.tableLayoutPanelConnection.Location = new System.Drawing.Point(0, 0);
+        this.tableLayoutPanelConnection.Name = "tableLayoutPanelConnection";
+        this.tableLayoutPanelConnection.RowCount = 1;
+        this.tableLayoutPanelConnection.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
+        this.tableLayoutPanelConnection.Size = new System.Drawing.Size(1600, 60);
+        this.tableLayoutPanelConnection.TabIndex = 0;
+        //
+        // panelInputArea - 输入区域
+        //
+        this.panelInputArea.BackColor = System.Drawing.Color.FromArgb(248, 249, 250);
+        this.panelInputArea.Controls.Add(this.labelLiveId);
+        this.panelInputArea.Controls.Add(this.textBoxLiveId);
+        this.panelInputArea.Dock = System.Windows.Forms.DockStyle.Fill;
+        this.panelInputArea.Location = new System.Drawing.Point(3, 3);
+        this.panelInputArea.Name = "panelInputArea";
+        this.panelInputArea.Padding = new System.Windows.Forms.Padding(12, 16, 0, 3);
+        this.panelInputArea.Size = new System.Drawing.Size(414, 54);
+        this.panelInputArea.TabIndex = 0;
+        //
+        // labelLiveId - 直播间ID标签
+        //
         this.labelLiveId.AutoSize = true;
-        this.labelLiveId.Location = new System.Drawing.Point(15, 50);
+        this.labelLiveId.Font = new System.Drawing.Font("Microsoft YaHei UI", 10F, System.Drawing.FontStyle.Bold);
+        this.labelLiveId.ForeColor = System.Drawing.Color.FromArgb(52, 58, 64);
+        this.labelLiveId.Location = new System.Drawing.Point(15, 19);
         this.labelLiveId.Name = "labelLiveId";
-        this.labelLiveId.Size = new System.Drawing.Size(59, 17);
+        this.labelLiveId.Size = new System.Drawing.Size(80, 19);
         this.labelLiveId.TabIndex = 0;
-        this.labelLiveId.Text = "直播间ID:";
-        // 
-        // textBoxLiveId
-        // 
-        this.textBoxLiveId.Location = new System.Drawing.Point(80, 47);
+        this.labelLiveId.Text = "直播间 ID:";
+        //
+        // textBoxLiveId - 直播间ID输入框
+        //
+        this.textBoxLiveId.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+        this.textBoxLiveId.Font = new System.Drawing.Font("Consolas", 10F);
+        this.textBoxLiveId.ForeColor = System.Drawing.Color.FromArgb(33, 37, 41);
+        this.textBoxLiveId.BackColor = System.Drawing.Color.White;
+        this.textBoxLiveId.Location = new System.Drawing.Point(103, 16);
         this.textBoxLiveId.Name = "textBoxLiveId";
-        this.textBoxLiveId.Size = new System.Drawing.Size(280, 23);
+        this.textBoxLiveId.Size = new System.Drawing.Size(280, 24);
         this.textBoxLiveId.TabIndex = 1;
         this.textBoxLiveId.Text = "MS4wLjABAAAA";
         this.textBoxLiveId.TextChanged += new System.EventHandler(this.TextBoxLiveId_TextChanged);
-        // 
-        // groupBoxMessages
-        // 
+        //
+        // flowLayoutPanelButtons - 按钮区域（右对齐）
+        //
+        this.flowLayoutPanelButtons.BackColor = System.Drawing.Color.FromArgb(248, 249, 250);
+        this.flowLayoutPanelButtons.Controls.Add(this.buttonConnect);
+        this.flowLayoutPanelButtons.Controls.Add(this.buttonWebSocket);
+        this.flowLayoutPanelButtons.Controls.Add(this.buttonSettings);
+        this.flowLayoutPanelButtons.Controls.Add(this.buttonDatabase);
+        this.flowLayoutPanelButtons.Dock = System.Windows.Forms.DockStyle.Right;
+        this.flowLayoutPanelButtons.FlowDirection = System.Windows.Forms.FlowDirection.RightToLeft;
+        this.flowLayoutPanelButtons.Location = new System.Drawing.Point(423, 3);
+        this.flowLayoutPanelButtons.Name = "flowLayoutPanelButtons";
+        this.flowLayoutPanelButtons.Padding = new System.Windows.Forms.Padding(0, 16, 12, 3);
+        this.flowLayoutPanelButtons.Size = new System.Drawing.Size(1174, 54);
+        this.flowLayoutPanelButtons.TabIndex = 1;
+        this.flowLayoutPanelButtons.WrapContents = false;
+        //
+        // buttonConnect - 连接按钮（绿色主题）
+        //
+        this.buttonConnect.BackColor = System.Drawing.Color.FromArgb(40, 167, 69);
+        this.buttonConnect.FlatStyle = System.Windows.Forms.FlatStyle.System;
+        this.buttonConnect.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F, System.Drawing.FontStyle.Bold);
+        this.buttonConnect.ForeColor = System.Drawing.Color.White;
+        this.buttonConnect.Location = new System.Drawing.Point(1010, 19);
+        this.buttonConnect.Name = "buttonConnect";
+        this.buttonConnect.Size = new System.Drawing.Size(80, 28);
+        this.buttonConnect.TabIndex = 2;
+        this.buttonConnect.Text = "连接";
+        this.buttonConnect.UseVisualStyleBackColor = false;
+        this.buttonConnect.Click += new System.EventHandler(this.ButtonConnect_Click);
+        //
+        // buttonWebSocket - WebSocket按钮（蓝色主题）
+        //
+        this.buttonWebSocket.BackColor = System.Drawing.Color.FromArgb(0, 123, 255);
+        this.buttonWebSocket.FlatStyle = System.Windows.Forms.FlatStyle.System;
+        this.buttonWebSocket.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+        this.buttonWebSocket.ForeColor = System.Drawing.Color.White;
+        this.buttonWebSocket.Location = new System.Drawing.Point(922, 19);
+        this.buttonWebSocket.Name = "buttonWebSocket";
+        this.buttonWebSocket.Size = new System.Drawing.Size(80, 28);
+        this.buttonWebSocket.TabIndex = 3;
+        this.buttonWebSocket.Text = "WebSocket";
+        this.buttonWebSocket.UseVisualStyleBackColor = false;
+        this.buttonWebSocket.Click += new System.EventHandler(this.ButtonWebSocket_Click);
+        //
+        // buttonSettings - 设置按钮（深蓝色主题）
+        //
+        this.buttonSettings.BackColor = System.Drawing.Color.FromArgb(30, 60, 114);
+        this.buttonSettings.FlatStyle = System.Windows.Forms.FlatStyle.System;
+        this.buttonSettings.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+        this.buttonSettings.ForeColor = System.Drawing.Color.White;
+        this.buttonSettings.Location = new System.Drawing.Point(834, 19);
+        this.buttonSettings.Name = "buttonSettings";
+        this.buttonSettings.Size = new System.Drawing.Size(80, 28);
+        this.buttonSettings.TabIndex = 4;
+        this.buttonSettings.Text = "设置";
+        this.buttonSettings.UseVisualStyleBackColor = false;
+        this.buttonSettings.Click += new System.EventHandler(this.ButtonSettings_Click);
+        //
+        // buttonDatabase - 数据库按钮（青色主题）
+        //
+        this.buttonDatabase.BackColor = System.Drawing.Color.FromArgb(23, 162, 184);
+        this.buttonDatabase.FlatStyle = System.Windows.Forms.FlatStyle.System;
+        this.buttonDatabase.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+        this.buttonDatabase.ForeColor = System.Drawing.Color.White;
+        this.buttonDatabase.Location = new System.Drawing.Point(746, 19);
+        this.buttonDatabase.Name = "buttonDatabase";
+        this.buttonDatabase.Size = new System.Drawing.Size(80, 28);
+        this.buttonDatabase.TabIndex = 5;
+        this.buttonDatabase.Text = "数据库";
+        this.buttonDatabase.UseVisualStyleBackColor = false;
+        this.buttonDatabase.Click += new System.EventHandler(this.ButtonDatabase_Click);
+        //
+        // groupBoxMessages - 消息列表区域
+        //
         this.groupBoxMessages.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
         | System.Windows.Forms.AnchorStyles.Left)
         | System.Windows.Forms.AnchorStyles.Right)));
-        this.groupBoxMessages.Controls.Add(this.buttonSaveLog);
-        this.groupBoxMessages.Controls.Add(this.buttonClear);
-        this.groupBoxMessages.Controls.Add(this.buttonShowUnknownTypes);
-        this.groupBoxMessages.Controls.Add(this.checkBoxAutoScroll);
+        this.groupBoxMessages.BackColor = System.Drawing.Color.White;
         this.groupBoxMessages.Controls.Add(this.groupBoxChat);
         this.groupBoxMessages.Controls.Add(this.groupBoxMember);
         this.groupBoxMessages.Controls.Add(this.groupBoxGiftFollow);
         this.groupBoxMessages.Controls.Add(this.groupBoxWatchedUsers);
-        this.groupBoxMessages.Location = new System.Drawing.Point(12, 98);
+        this.groupBoxMessages.Location = new System.Drawing.Point(12, 72);
         this.groupBoxMessages.Name = "groupBoxMessages";
-        this.groupBoxMessages.Size = new System.Drawing.Size(1576, 400);
+        this.groupBoxMessages.Size = new System.Drawing.Size(1576, 550);
         this.groupBoxMessages.TabIndex = 1;
         this.groupBoxMessages.TabStop = false;
-        this.groupBoxMessages.Text = "消息列表";
-        // 
-        // buttonSaveLog
-        // 
+        this.groupBoxMessages.Text = "实时消息监控";
+        this.groupBoxMessages.Font = new System.Drawing.Font("Microsoft YaHei UI", 10F, System.Drawing.FontStyle.Bold);
+        this.groupBoxMessages.ForeColor = System.Drawing.Color.FromArgb(30, 60, 114);
+        //
+        // buttonSaveLog - 保存日志按钮（蓝色主题）
+        //
+        this.buttonSaveLog.BackColor = System.Drawing.Color.FromArgb(0, 123, 255);
+        this.buttonSaveLog.FlatStyle = System.Windows.Forms.FlatStyle.System;
+        this.buttonSaveLog.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+        this.buttonSaveLog.ForeColor = System.Drawing.Color.White;
         this.buttonSaveLog.Location = new System.Drawing.Point(1110, 368);
         this.buttonSaveLog.Name = "buttonSaveLog";
-        this.buttonSaveLog.Size = new System.Drawing.Size(75, 25);
+        this.buttonSaveLog.Size = new System.Drawing.Size(85, 28);
         this.buttonSaveLog.TabIndex = 3;
         this.buttonSaveLog.Text = "保存日志";
-        this.buttonSaveLog.UseVisualStyleBackColor = true;
+        this.buttonSaveLog.UseVisualStyleBackColor = false;
         this.buttonSaveLog.Click += new System.EventHandler(this.ButtonSaveLog_Click);
-        // 
-        // buttonClear
-        // 
-        this.buttonClear.Location = new System.Drawing.Point(1020, 368);
+        //
+        // buttonClear - 清空按钮（红色主题）
+        //
+        this.buttonClear.BackColor = System.Drawing.Color.FromArgb(220, 53, 69);
+        this.buttonClear.FlatStyle = System.Windows.Forms.FlatStyle.System;
+        this.buttonClear.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+        this.buttonClear.ForeColor = System.Drawing.Color.White;
+        this.buttonClear.Location = new System.Drawing.Point(1015, 368);
         this.buttonClear.Name = "buttonClear";
-        this.buttonClear.Size = new System.Drawing.Size(75, 25);
+        this.buttonClear.Size = new System.Drawing.Size(85, 28);
         this.buttonClear.TabIndex = 2;
         this.buttonClear.Text = "清空";
-        this.buttonClear.UseVisualStyleBackColor = true;
+        this.buttonClear.UseVisualStyleBackColor = false;
         this.buttonClear.Click += new System.EventHandler(this.ButtonClear_Click);
-        // 
-        // buttonShowUnknownTypes
-        // 
-        this.buttonShowUnknownTypes.Location = new System.Drawing.Point(920, 368);
-        this.buttonShowUnknownTypes.Name = "buttonShowUnknownTypes";
-        this.buttonShowUnknownTypes.Size = new System.Drawing.Size(90, 25);
-        this.buttonShowUnknownTypes.TabIndex = 4;
-        this.buttonShowUnknownTypes.Text = "未知类型统计";
-        this.buttonShowUnknownTypes.UseVisualStyleBackColor = true;
-        this.buttonShowUnknownTypes.Click += new System.EventHandler(this.BtnShowUnknownTypes_Click);
-        // 
-        // checkBoxAutoScroll
-        // 
+        //
+        // checkBoxAutoScroll - 自动滚动复选框
+        //
         this.checkBoxAutoScroll.AutoSize = true;
         this.checkBoxAutoScroll.Checked = true;
         this.checkBoxAutoScroll.CheckState = System.Windows.Forms.CheckState.Checked;
+        this.checkBoxAutoScroll.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+        this.checkBoxAutoScroll.ForeColor = System.Drawing.Color.FromArgb(52, 58, 64);
         this.checkBoxAutoScroll.Location = new System.Drawing.Point(15, 370);
         this.checkBoxAutoScroll.Name = "checkBoxAutoScroll";
-        this.checkBoxAutoScroll.Size = new System.Drawing.Size(75, 21);
+        this.checkBoxAutoScroll.Size = new System.Drawing.Size(80, 21);
         this.checkBoxAutoScroll.TabIndex = 1;
         this.checkBoxAutoScroll.Text = "自动滚动";
         this.checkBoxAutoScroll.UseVisualStyleBackColor = true;
         this.checkBoxAutoScroll.CheckedChanged += new System.EventHandler(this.CheckBoxAutoScroll_CheckedChanged);
-        // 
-        // groupBoxChat
-        // 
+        //
+        // groupBoxChat - 聊天消息区域（深蓝色主题）
+        //
+        this.groupBoxChat.BackColor = System.Drawing.Color.White;
         this.groupBoxChat.Controls.Add(this.listViewChat);
         this.groupBoxChat.Location = new System.Drawing.Point(15, 22);
         this.groupBoxChat.Name = "groupBoxChat";
-        this.groupBoxChat.Size = new System.Drawing.Size(380, 310);
+        this.groupBoxChat.Size = new System.Drawing.Size(380, 340);
         this.groupBoxChat.TabIndex = 5;
         this.groupBoxChat.TabStop = false;
         this.groupBoxChat.Text = "聊天消息";
-        // 
+        this.groupBoxChat.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F, System.Drawing.FontStyle.Bold);
+        this.groupBoxChat.ForeColor = System.Drawing.Color.FromArgb(30, 60, 114);
+        //
         // listViewChat
-        // 
+        //
         this.listViewChat.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
         this.columnHeaderChatTime,
         this.columnHeaderChatUser,
@@ -247,26 +312,32 @@ partial class Form1
         this.columnHeaderChatContent});
         this.listViewChat.FullRowSelect = true;
         this.listViewChat.GridLines = true;
-        this.listViewChat.Location = new System.Drawing.Point(6, 18);
+        this.listViewChat.Location = new System.Drawing.Point(6, 20);
         this.listViewChat.Name = "listViewChat";
-        this.listViewChat.Size = new System.Drawing.Size(368, 286);
+        this.listViewChat.Size = new System.Drawing.Size(368, 314);
         this.listViewChat.TabIndex = 0;
         this.listViewChat.UseCompatibleStateImageBehavior = false;
         this.listViewChat.View = System.Windows.Forms.View.Details;
         this.listViewChat.ContextMenuStrip = this.contextMenuStripMessage;
-        // 
-        // groupBoxMember
-        // 
+        this.listViewChat.BackColor = System.Drawing.Color.White;
+        this.listViewChat.ForeColor = System.Drawing.Color.FromArgb(33, 37, 41);
+        this.listViewChat.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+        //
+        // groupBoxMember - 进场消息区域
+        //
+        this.groupBoxMember.BackColor = System.Drawing.Color.White;
         this.groupBoxMember.Controls.Add(this.listViewMember);
         this.groupBoxMember.Location = new System.Drawing.Point(405, 22);
         this.groupBoxMember.Name = "groupBoxMember";
-        this.groupBoxMember.Size = new System.Drawing.Size(380, 310);
+        this.groupBoxMember.Size = new System.Drawing.Size(380, 340);
         this.groupBoxMember.TabIndex = 6;
         this.groupBoxMember.TabStop = false;
         this.groupBoxMember.Text = "进场消息";
-        // 
+        this.groupBoxMember.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F, System.Drawing.FontStyle.Bold);
+        this.groupBoxMember.ForeColor = System.Drawing.Color.FromArgb(30, 60, 114);
+        //
         // listViewMember
-        // 
+        //
         this.listViewMember.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
         this.columnHeaderMemberTime,
         this.columnHeaderMemberUser,
@@ -276,26 +347,32 @@ partial class Form1
         this.columnHeaderMemberContent});
         this.listViewMember.FullRowSelect = true;
         this.listViewMember.GridLines = true;
-        this.listViewMember.Location = new System.Drawing.Point(6, 18);
+        this.listViewMember.Location = new System.Drawing.Point(6, 20);
         this.listViewMember.Name = "listViewMember";
-        this.listViewMember.Size = new System.Drawing.Size(368, 286);
+        this.listViewMember.Size = new System.Drawing.Size(368, 314);
         this.listViewMember.TabIndex = 0;
         this.listViewMember.UseCompatibleStateImageBehavior = false;
         this.listViewMember.View = System.Windows.Forms.View.Details;
         this.listViewMember.ContextMenuStrip = this.contextMenuStripMessage;
-        // 
-        // groupBoxGiftFollow
-        // 
+        this.listViewMember.BackColor = System.Drawing.Color.White;
+        this.listViewMember.ForeColor = System.Drawing.Color.FromArgb(33, 37, 41);
+        this.listViewMember.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+        //
+        // groupBoxGiftFollow - 礼物与关注区域
+        //
+        this.groupBoxGiftFollow.BackColor = System.Drawing.Color.White;
         this.groupBoxGiftFollow.Controls.Add(this.listViewGiftFollow);
         this.groupBoxGiftFollow.Location = new System.Drawing.Point(795, 22);
         this.groupBoxGiftFollow.Name = "groupBoxGiftFollow";
-        this.groupBoxGiftFollow.Size = new System.Drawing.Size(390, 310);
+        this.groupBoxGiftFollow.Size = new System.Drawing.Size(390, 340);
         this.groupBoxGiftFollow.TabIndex = 7;
         this.groupBoxGiftFollow.TabStop = false;
-        this.groupBoxGiftFollow.Text = "礼物&关注";
-        // 
+        this.groupBoxGiftFollow.Text = "礼物与关注";
+        this.groupBoxGiftFollow.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F, System.Drawing.FontStyle.Bold);
+        this.groupBoxGiftFollow.ForeColor = System.Drawing.Color.FromArgb(30, 60, 114);
+        //
         // listViewGiftFollow
-        // 
+        //
         this.listViewGiftFollow.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
         this.columnHeaderGiftTime,
         this.columnHeaderGiftType,
@@ -306,26 +383,32 @@ partial class Form1
         this.columnHeaderGiftContent});
         this.listViewGiftFollow.FullRowSelect = true;
         this.listViewGiftFollow.GridLines = true;
-        this.listViewGiftFollow.Location = new System.Drawing.Point(6, 18);
+        this.listViewGiftFollow.Location = new System.Drawing.Point(6, 20);
         this.listViewGiftFollow.Name = "listViewGiftFollow";
-        this.listViewGiftFollow.Size = new System.Drawing.Size(378, 286);
+        this.listViewGiftFollow.Size = new System.Drawing.Size(378, 314);
         this.listViewGiftFollow.TabIndex = 0;
         this.listViewGiftFollow.UseCompatibleStateImageBehavior = false;
         this.listViewGiftFollow.View = System.Windows.Forms.View.Details;
         this.listViewGiftFollow.ContextMenuStrip = this.contextMenuStripMessage;
-        // 
-        // groupBoxWatchedUsers
-        // 
+        this.listViewGiftFollow.BackColor = System.Drawing.Color.White;
+        this.listViewGiftFollow.ForeColor = System.Drawing.Color.FromArgb(33, 37, 41);
+        this.listViewGiftFollow.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+        //
+        // groupBoxWatchedUsers - 关注用户区域
+        //
+        this.groupBoxWatchedUsers.BackColor = System.Drawing.Color.White;
         this.groupBoxWatchedUsers.Controls.Add(this.listViewWatchedUsers);
-        this.groupBoxWatchedUsers.Location = new System.Drawing.Point(795, 338);
+        this.groupBoxWatchedUsers.Location = new System.Drawing.Point(795, 368);
         this.groupBoxWatchedUsers.Name = "groupBoxWatchedUsers";
-        this.groupBoxWatchedUsers.Size = new System.Drawing.Size(390, 310);
+        this.groupBoxWatchedUsers.Size = new System.Drawing.Size(390, 160);
         this.groupBoxWatchedUsers.TabIndex = 8;
         this.groupBoxWatchedUsers.TabStop = false;
         this.groupBoxWatchedUsers.Text = "关注用户";
-        // 
+        this.groupBoxWatchedUsers.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F, System.Drawing.FontStyle.Bold);
+        this.groupBoxWatchedUsers.ForeColor = System.Drawing.Color.FromArgb(30, 60, 114);
+        //
         // listViewWatchedUsers
-        // 
+        //
         this.listViewWatchedUsers.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
         this.columnHeaderWatchedTime,
         this.columnHeaderWatchedType,
@@ -336,13 +419,16 @@ partial class Form1
         this.columnHeaderWatchedContent});
         this.listViewWatchedUsers.FullRowSelect = true;
         this.listViewWatchedUsers.GridLines = true;
-        this.listViewWatchedUsers.Location = new System.Drawing.Point(6, 18);
+        this.listViewWatchedUsers.Location = new System.Drawing.Point(6, 20);
         this.listViewWatchedUsers.Name = "listViewWatchedUsers";
-        this.listViewWatchedUsers.Size = new System.Drawing.Size(378, 286);
+        this.listViewWatchedUsers.Size = new System.Drawing.Size(378, 134);
         this.listViewWatchedUsers.TabIndex = 0;
         this.listViewWatchedUsers.UseCompatibleStateImageBehavior = false;
         this.listViewWatchedUsers.View = System.Windows.Forms.View.Details;
         this.listViewWatchedUsers.ContextMenuStrip = this.contextMenuStripMessage;
+        this.listViewWatchedUsers.BackColor = System.Drawing.Color.White;
+        this.listViewWatchedUsers.ForeColor = System.Drawing.Color.FromArgb(33, 37, 41);
+        this.listViewWatchedUsers.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
         // 
         // columnHeaderChatTime
         // 
@@ -473,21 +559,24 @@ partial class Form1
         // 
         this.columnHeaderWatchedContent.Text = "内容";
         this.columnHeaderWatchedContent.Width = 100;
-        // 
-        // groupBoxStatus
-        // 
+        //
+        // groupBoxStatus - 状态栏区域
+        //
         this.groupBoxStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)
         | System.Windows.Forms.AnchorStyles.Right)));
+        this.groupBoxStatus.BackColor = System.Drawing.Color.FromArgb(248, 249, 250);
         this.groupBoxStatus.Controls.Add(this.textBoxStatus);
-        this.groupBoxStatus.Location = new System.Drawing.Point(12, 504);
+        this.groupBoxStatus.Location = new System.Drawing.Point(12, 628);
         this.groupBoxStatus.Name = "groupBoxStatus";
-        this.groupBoxStatus.Size = new System.Drawing.Size(800, 80);
+        this.groupBoxStatus.Size = new System.Drawing.Size(1576, 196);
         this.groupBoxStatus.TabIndex = 2;
         this.groupBoxStatus.TabStop = false;
-        this.groupBoxStatus.Text = "状态信息";
-        // 
-        // textBoxStatus
-        // 
+        this.groupBoxStatus.Text = "运行状态";
+        this.groupBoxStatus.Font = new System.Drawing.Font("Microsoft YaHei UI", 10F, System.Drawing.FontStyle.Bold);
+        this.groupBoxStatus.ForeColor = System.Drawing.Color.FromArgb(30, 60, 114);
+        //
+        // textBoxStatus - 状态文本框
+        //
         this.textBoxStatus.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
         | System.Windows.Forms.AnchorStyles.Left)
         | System.Windows.Forms.AnchorStyles.Right)));
@@ -496,8 +585,29 @@ partial class Form1
         this.textBoxStatus.Name = "textBoxStatus";
         this.textBoxStatus.ReadOnly = true;
         this.textBoxStatus.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-        this.textBoxStatus.Size = new System.Drawing.Size(770, 50);
+        this.textBoxStatus.Size = new System.Drawing.Size(1546, 166);
         this.textBoxStatus.TabIndex = 0;
+        this.textBoxStatus.Font = new System.Drawing.Font("Consolas", 9F);
+        this.textBoxStatus.BackColor = System.Drawing.Color.White;
+        this.textBoxStatus.ForeColor = System.Drawing.Color.FromArgb(33, 37, 41);
+        this.textBoxStatus.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+
+        //
+        // _roomTabControl - 多房间TabControl
+        //
+        this._roomTabControl = new System.Windows.Forms.TabControl();
+        this._roomTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
+        this._roomTabControl.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
+        this._roomTabControl.Location = new System.Drawing.Point(0, 0);
+        this._roomTabControl.Name = "_roomTabControl";
+        this._roomTabControl.SelectedIndex = 0;
+        this._roomTabControl.Size = new System.Drawing.Size(1576, 500);
+        this._roomTabControl.TabIndex = 10;
+        this._roomTabControl.Visible = false;
+        this._roomTabControl.SelectedIndexChanged += new System.EventHandler(this.RoomTabControl_SelectedIndexChanged);
+
+        // 将_roomTabControl添加到groupBoxMessages
+        this.groupBoxMessages.Controls.Add(this._roomTabControl);
         // 
         // 
         // contextMenuStripMessage
@@ -546,22 +656,28 @@ partial class Form1
         this.toolStripMenuItemCopyUserName.Click += new System.EventHandler(this.ToolStripMenuItemCopyUserName_Click);
         // 
         // Form1
-        // 
+        //
         this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
         this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-        this.ClientSize = new System.Drawing.Size(1600, 596);
+        this.ClientSize = new System.Drawing.Size(1600, 850);
+        this.Controls.Add(this.buttonSaveLog);
+        this.Controls.Add(this.buttonClear);
+        this.Controls.Add(this.checkBoxAutoScroll);
         this.Controls.Add(this.groupBoxStatus);
         this.Controls.Add(this.groupBoxMessages);
-        this.Controls.Add(this.groupBoxConnection);
+        this.Controls.Add(this.panelConnection);
         this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Sizable;
         this.MaximizeBox = true;
-        this.MinimumSize = new System.Drawing.Size(1616, 635);
+        this.MinimumSize = new System.Drawing.Size(1200, 750);
         this.Name = "Form1";
         this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
         this.Text = "抖音直播弹幕抓取器 v1.3.0";
         this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Form1_FormClosing);
-        this.groupBoxConnection.ResumeLayout(false);
-        this.groupBoxConnection.PerformLayout();
+        this.flowLayoutPanelButtons.ResumeLayout(false);
+        this.panelInputArea.ResumeLayout(false);
+        this.panelInputArea.PerformLayout();
+        this.tableLayoutPanelConnection.ResumeLayout(false);
+        this.panelConnection.ResumeLayout(false);
         this.groupBoxMessages.ResumeLayout(false);
         this.groupBoxMessages.PerformLayout();
         this.groupBoxStatus.ResumeLayout(false);
@@ -572,7 +688,10 @@ partial class Form1
 
     #endregion
 
-    private System.Windows.Forms.GroupBox groupBoxConnection;
+    private System.Windows.Forms.Panel panelConnection;
+    private System.Windows.Forms.TableLayoutPanel tableLayoutPanelConnection;
+    private System.Windows.Forms.Panel panelInputArea;
+    private System.Windows.Forms.FlowLayoutPanel flowLayoutPanelButtons;
     private System.Windows.Forms.Button buttonDatabase;
     private System.Windows.Forms.Button buttonSettings;
     private System.Windows.Forms.Button buttonWebSocket;
@@ -582,7 +701,6 @@ partial class Form1
     private System.Windows.Forms.GroupBox groupBoxMessages;
     private System.Windows.Forms.Button buttonSaveLog;
     private System.Windows.Forms.Button buttonClear;
-    private System.Windows.Forms.Button buttonShowUnknownTypes;
     private System.Windows.Forms.CheckBox checkBoxAutoScroll;
     private System.Windows.Forms.GroupBox groupBoxChat;
     private System.Windows.Forms.ListView listViewChat;

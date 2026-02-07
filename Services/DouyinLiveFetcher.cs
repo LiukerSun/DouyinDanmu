@@ -20,6 +20,7 @@ namespace DouyinDanmu.Services
         private readonly string _liveId;
         private readonly HttpClient _httpClient;
         private readonly SignatureGenerator _signatureGenerator;
+        private readonly bool _ownsSignatureGenerator;
         private ClientWebSocket? _webSocket;
         private CancellationTokenSource? _cancellationTokenSource;
         private System.Threading.Timer? _heartbeatTimer;
@@ -37,11 +38,25 @@ namespace DouyinDanmu.Services
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<Exception>? ErrorOccurred;
 
-        public DouyinLiveFetcher(string liveId)
+        public DouyinLiveFetcher(string liveId) : this(liveId, null)
+        {
+        }
+
+        public DouyinLiveFetcher(string liveId, SignatureGenerator? sharedSignatureGenerator)
         {
             _liveId = liveId;
             _httpClient = new HttpClient();
-            _signatureGenerator = new SignatureGenerator();
+
+            if (sharedSignatureGenerator != null)
+            {
+                _signatureGenerator = sharedSignatureGenerator;
+                _ownsSignatureGenerator = false;
+            }
+            else
+            {
+                _signatureGenerator = new SignatureGenerator();
+                _ownsSignatureGenerator = true;
+            }
 
             // 设置User-Agent
             _httpClient.DefaultRequestHeaders.Add("User-Agent",
@@ -474,7 +489,10 @@ namespace DouyinDanmu.Services
                 _heartbeatTimer?.Dispose();
                 _webSocket?.Dispose();
                 _httpClient?.Dispose();
-                _signatureGenerator?.Dispose();
+                if (_ownsSignatureGenerator)
+                {
+                    _signatureGenerator?.Dispose();
+                }
                 _disposed = true;
             }
         }

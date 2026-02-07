@@ -19,14 +19,16 @@ namespace DouyinDanmu.Services
     {
         public WebSocket WebSocket { get; set; }
         public string Id { get; set; }
-        public HashSet<string> Subscriptions { get; set; }
+        public HashSet<string> TypeSubscriptions { get; set; }
+        public HashSet<string> RoomSubscriptions { get; set; }
         public DateTime ConnectedAt { get; set; }
 
         public WebSocketClient(WebSocket webSocket)
         {
             WebSocket = webSocket;
             Id = Guid.NewGuid().ToString();
-            Subscriptions = new HashSet<string>();
+            TypeSubscriptions = new HashSet<string>();
+            RoomSubscriptions = new HashSet<string>();
             ConnectedAt = DateTime.Now;
         }
     }
@@ -37,6 +39,7 @@ namespace DouyinDanmu.Services
     public class WebSocketMessage
     {
         public string Type { get; set; } = string.Empty;
+        public string RoomId { get; set; } = string.Empty;
         public DateTime Timestamp { get; set; }
         public object Data { get; set; } = new();
     }
@@ -215,8 +218,8 @@ namespace DouyinDanmu.Services
     </div>
     
     <h2>连接方式</h2>
-    <div class='endpoint'>ws://localhost:{Port}/?type=chat,gift</div>
-    
+    <div class='endpoint'>ws://localhost:{Port}/?type=chat,gift&amp;room=room1,room2</div>
+
     <h2>支持的订阅类型</h2>
     <ul>
         <li><code>chat</code> - 弹幕消息</li>
@@ -226,11 +229,17 @@ namespace DouyinDanmu.Services
         <li><code>social</code> - 关注消息</li>
         <li><code>all</code> - 所有消息</li>
     </ul>
+
+    <h2>房间订阅</h2>
+    <ul>
+        <li><code>room=房间ID1,房间ID2</code> - 订阅指定房间</li>
+        <li><code>room=all</code> - 订阅所有房间（默认）</li>
+    </ul>
     
     <h2>使用示例</h2>
     <div class='example'>
         <h3>JavaScript客户端</h3>
-        <pre><code>const ws = new WebSocket('ws://localhost:{Port}/?type=chat,gift');
+        <pre><code>const ws = new WebSocket('ws://localhost:{Port}/?type=chat,gift&room=room1');
 ws.onmessage = function(event) {{
     const message = JSON.parse(event.data);
     console.log('收到消息:', message);
@@ -275,7 +284,7 @@ ws.onclose = function() {{
                 
                 client = new WebSocketClient(webSocket);
                 
-                // 解析订阅类型
+                // 解析订阅类型和房间
                 var query = context.Request.Url?.Query;
                 if (!string.IsNullOrEmpty(query))
                 {
@@ -286,22 +295,39 @@ ws.onclose = function() {{
                         var types = typeParam.Split(',', StringSplitOptions.RemoveEmptyEntries);
                         foreach (var type in types)
                         {
-                            client.Subscriptions.Add(type.Trim().ToLower());
+                            client.TypeSubscriptions.Add(type.Trim().ToLower());
+                        }
+                    }
+
+                    // 解析房间订阅参数
+                    var roomParam = ParseQueryParameter(query, "room");
+                    if (!string.IsNullOrEmpty(roomParam))
+                    {
+                        var rooms = roomParam.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var room in rooms)
+                        {
+                            client.RoomSubscriptions.Add(room.Trim());
                         }
                     }
                 }
-                
+
                 // 如果没有指定订阅类型，默认订阅所有消息
-                if (client.Subscriptions.Count == 0)
+                if (client.TypeSubscriptions.Count == 0)
                 {
-                    client.Subscriptions.Add("all");
+                    client.TypeSubscriptions.Add("all");
+                }
+
+                // 如果没有指定房间，默认订阅所有房间
+                if (client.RoomSubscriptions.Count == 0)
+                {
+                    client.RoomSubscriptions.Add("all");
                 }
 
                 // 先添加到客户端列表，确保在发送消息前已注册
                 _clients.TryAdd(client.Id, client);
                 StatusChanged?.Invoke(
                     this,
-                    $"新客户端连接成功: {client.Id}, 订阅: {string.Join(",", client.Subscriptions)}, 总客户端数: {_clients.Count}"
+                    $"新客户端连接成功: {client.Id}, 类型订阅: {string.Join(",", client.TypeSubscriptions)}, 房间订阅: {string.Join(",", client.RoomSubscriptions)}, 总客户端数: {_clients.Count}"
                 );
 
                 // 发送欢迎消息
@@ -375,7 +401,8 @@ ws.onclose = function() {{
                     Data = new
                     {
                         clientId = client.Id,
-                        subscriptions = client.Subscriptions.ToArray(),
+                        typeSubscriptions = client.TypeSubscriptions.ToArray(),
+                        roomSubscriptions = client.RoomSubscriptions.ToArray(),
                         message = "WebSocket连接成功",
                         serverInfo = new
                         {
@@ -598,6 +625,7 @@ ws.onclose = function() {{
             var wsMessage = new WebSocketMessage
             {
                 Type = messageType,
+                RoomId = liveMessage.RoomId,
                 Timestamp = liveMessage.Timestamp,
                 Data = CreateMessageData(liveMessage),
             };
@@ -606,7 +634,7 @@ ws.onclose = function() {{
 
             foreach (var client in _clients.Values.ToList())
             {
-                if (ShouldSendMessage(client, messageType))
+                if (ShouldSendMessage(client, messageType, liveMessage.RoomId))
                 {
                     tasks.Add(SendMessageToClientAsync(client, wsMessage));
                 }
@@ -621,13 +649,18 @@ ws.onclose = function() {{
         /// <summary>
         /// 判断是否应该发送消息给客户端
         /// </summary>
-        private bool ShouldSendMessage(WebSocketClient client, string messageType)
+        private bool ShouldSendMessage(WebSocketClient client, string messageType, string roomId)
         {
-            return client.WebSocket.State == WebSocketState.Open
-                && (
-                    client.Subscriptions.Contains("all")
-                    || client.Subscriptions.Contains(messageType)
-                );
+            if (client.WebSocket.State != WebSocketState.Open)
+                return false;
+
+            var typeMatch = client.TypeSubscriptions.Contains("all")
+                || client.TypeSubscriptions.Contains(messageType);
+
+            var roomMatch = client.RoomSubscriptions.Contains("all")
+                || client.RoomSubscriptions.Contains(roomId);
+
+            return typeMatch && roomMatch;
         }
 
         /// <summary>
@@ -839,7 +872,8 @@ ws.onclose = function() {{
                     .Values.Select(c => new
                     {
                         id = c.Id,
-                        subscriptions = c.Subscriptions.ToArray(),
+                        typeSubscriptions = c.TypeSubscriptions.ToArray(),
+                        roomSubscriptions = c.RoomSubscriptions.ToArray(),
                         connectedAt = c.ConnectedAt,
                         state = c.WebSocket.State.ToString(),
                     })

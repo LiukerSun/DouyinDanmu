@@ -167,6 +167,12 @@ namespace DouyinDanmu.Models
         public int MaxReconnectAttempts { get; set; } = 3;
 
         /// <summary>
+        /// 最大同时连接房间数
+        /// </summary>
+        [Range(1, 20)]
+        public int MaxConcurrentRooms { get; set; } = 5;
+
+        /// <summary>
         /// 心跳间隔(秒)
         /// </summary>
         [Range(10, 120)]

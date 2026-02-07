@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -13,6 +14,13 @@ namespace DouyinDanmu
 {
     public partial class Form1 : Form
     {
+        // 多房间连接管理
+        private ConnectionManager? _connectionManager;
+        private LoggingService? _loggingService;
+        private readonly ConcurrentDictionary<string, RoomTabPage> _roomTabs = new();
+        private TabControl? _roomTabControl;
+
+        // 向后兼容：单房间模式字段（保留用于过渡）
         private Services.DouyinLiveFetcher? _fetcher;
         private bool _isConnected = false;
         private List<string> _watchedUserIds = [];
@@ -20,7 +28,7 @@ namespace DouyinDanmu
         private DatabaseService? _databaseService;
         private Services.WebSocketService? _webSocketService;
 
-        // 批量更新相关字段
+        // 批量更新相关字段（保留用于向后兼容，新房间使用RoomTabPage内部队列）
         private readonly System.Windows.Forms.Timer _updateTimer;
         private readonly Queue<LiveMessage> _pendingMessages = new();
         private readonly object _pendingMessagesLock = new();
@@ -55,6 +63,12 @@ namespace DouyinDanmu
             _updateTimer.Tick += UpdateTimer_Tick;
             _updateTimer.Start();
 
+            // 初始化TabControl（放在groupBoxMessages内部，与原有4个GroupBox并列）
+            InitializeRoomTabControl();
+
+            // 初始化ConnectionManager
+            InitializeConnectionManager();
+
             // 加载设置
             LoadSettings();
 
@@ -78,6 +92,49 @@ namespace DouyinDanmu
         }
 
         /// <summary>
+        /// 初始化多房间TabControl
+        /// </summary>
+        private void InitializeRoomTabControl()
+        {
+            _roomTabControl = new TabControl
+            {
+                Dock = DockStyle.None,
+                Font = new Font("Microsoft YaHei UI", 9F),
+                Visible = false // 初始隐藏，有多房间时才显示
+            };
+            _roomTabControl.SelectedIndexChanged += RoomTabControl_SelectedIndexChanged;
+            groupBoxMessages.Controls.Add(_roomTabControl);
+        }
+
+        /// <summary>
+        /// 初始化ConnectionManager
+        /// </summary>
+        private void InitializeConnectionManager()
+        {
+            var networkSettings = new NetworkSettings();
+            var loggingSettings = new LoggingSettings();
+            _loggingService = new LoggingService(loggingSettings);
+            _connectionManager = new ConnectionManager(networkSettings, _loggingService);
+
+            // 绑定多房间事件
+            _connectionManager.RoomMessageReceived += OnRoomMessageReceived;
+            _connectionManager.ConnectionStateChanged += OnConnectionStateChanged;
+            _connectionManager.StatusChanged += OnConnectionManagerStatusChanged;
+        }
+
+        /// <summary>
+        /// TabControl选中标签页变化事件
+        /// </summary>
+        private void RoomTabControl_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            // 可以在这里更新状态栏显示当前选中房间的信息
+            if (_roomTabControl?.SelectedTab is RoomTabPage roomTab)
+            {
+                UpdateStatus($"当前查看房间: {roomTab.LiveId}");
+            }
+        }
+
+        /// <summary>
         /// 为ListView启用双缓冲
         /// </summary>
         private static void EnableListViewDoubleBuffering(ListView listView)
@@ -92,6 +149,277 @@ namespace DouyinDanmu
                 [true]
             );
         }
+
+        #region 多房间管理
+
+        /// <summary>
+        /// ConnectionManager消息接收事件 - 路由到对应的RoomTabPage
+        /// </summary>
+        private void OnRoomMessageReceived(object? sender, RoomMessageEventArgs e)
+        {
+            // 路由消息到对应的RoomTabPage
+            if (_roomTabs.TryGetValue(e.RoomId, out var roomTab))
+            {
+                roomTab.EnqueueMessage(e.Message);
+            }
+
+            // 同时保存到数据库
+            _databaseService?.QueueMessage(e.Message);
+
+            // 广播到WebSocket
+            if (_webSocketService != null && _webSocketService.IsRunning)
+            {
+                _ = Task.Run(async () =>
+                    await _webSocketService.BroadcastLiveMessageAsync(e.Message)
+                );
+            }
+        }
+
+        /// <summary>
+        /// ConnectionManager连接状态变化事件
+        /// </summary>
+        private void OnConnectionStateChanged(object? sender, ConnectionStateChangedEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(() => OnConnectionStateChanged(sender, e));
+                return;
+            }
+
+            // 更新对应RoomTabPage的连接状态
+            if (_roomTabs.TryGetValue(e.RoomId, out var roomTab))
+            {
+                bool connected = e.State == Services.ConnectionState.Connected;
+                roomTab.UpdateConnectionState(e.Message, connected);
+            }
+
+            UpdateStatus($"[{e.RoomId}] {e.Message}");
+
+            // 更新连接按钮状态
+            UpdateConnectButtonState();
+        }
+
+        /// <summary>
+        /// ConnectionManager状态变化事件
+        /// </summary>
+        private void OnConnectionManagerStatusChanged(object? sender, string status)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(() => OnConnectionManagerStatusChanged(sender, status));
+                return;
+            }
+            UpdateStatus(status);
+        }
+
+        /// <summary>
+        /// 添加新的直播间标签页并连接
+        /// </summary>
+        private async Task AddRoomAndConnectAsync(string liveId)
+        {
+            if (string.IsNullOrWhiteSpace(liveId))
+            {
+                UpdateStatus("请输入直播间ID");
+                return;
+            }
+
+            var roomId = liveId; // 使用liveId作为roomId
+
+            // 检查是否已存在
+            if (_roomTabs.ContainsKey(roomId))
+            {
+                // 切换到已有标签页
+                if (_roomTabControl != null)
+                {
+                    foreach (TabPage tab in _roomTabControl.TabPages)
+                    {
+                        if (tab is RoomTabPage existingTab && existingTab.RoomId == roomId)
+                        {
+                            _roomTabControl.SelectedTab = existingTab;
+                            break;
+                        }
+                    }
+                }
+                UpdateStatus($"房间 {liveId} 已存在，已切换到该标签页");
+                return;
+            }
+
+            // 创建RoomTabPage
+            var roomTab = new RoomTabPage(
+                roomId, liveId, _watchedUserIds, GetDisplayUserName);
+            roomTab.DisconnectRequested += RoomTab_DisconnectRequested;
+            roomTab.CloseRequested += RoomTab_CloseRequested;
+            roomTab.SetAutoScroll(checkBoxAutoScroll.Checked);
+
+            // 为RoomTabPage中的ListView绑定右键菜单
+            foreach (var lv in roomTab.GetAllListViews())
+            {
+                lv.ContextMenuStrip = contextMenuStripMessage;
+            }
+
+            // 添加到字典和TabControl
+            _roomTabs[roomId] = roomTab;
+            _roomTabControl!.TabPages.Add(roomTab);
+            _roomTabControl.SelectedTab = roomTab;
+
+            // 显示TabControl（如果是第一个房间）
+            if (_roomTabs.Count == 1)
+            {
+                ShowMultiRoomUI();
+            }
+
+            // 通过ConnectionManager连接
+            UpdateStatus($"正在连接房间 {liveId}...");
+            buttonConnect.Enabled = false;
+
+            try
+            {
+                var success = await _connectionManager!.ConnectAsync(roomId, liveId);
+                if (success)
+                {
+                    UpdateStatus($"房间 {liveId} 连接成功");
+                }
+                else
+                {
+                    UpdateStatus($"房间 {liveId} 连接失败");
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"房间 {liveId} 连接异常: {ex.Message}");
+            }
+            finally
+            {
+                buttonConnect.Enabled = true;
+                UpdateConnectButtonState();
+            }
+        }
+
+        /// <summary>
+        /// RoomTabPage断开请求事件
+        /// </summary>
+        private async void RoomTab_DisconnectRequested(object? sender, EventArgs e)
+        {
+            if (sender is RoomTabPage roomTab)
+            {
+                await DisconnectRoomAsync(roomTab.RoomId);
+            }
+        }
+
+        /// <summary>
+        /// RoomTabPage关闭请求事件
+        /// </summary>
+        private async void RoomTab_CloseRequested(object? sender, EventArgs e)
+        {
+            if (sender is RoomTabPage roomTab)
+            {
+                var result = MessageBox.Show(
+                    $"确定要关闭房间 {roomTab.LiveId} 吗？",
+                    "确认关闭",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question
+                );
+                if (result == DialogResult.Yes)
+                {
+                    await RemoveRoomAsync(roomTab.RoomId);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 断开指定房间
+        /// </summary>
+        private async Task DisconnectRoomAsync(string roomId)
+        {
+            if (_connectionManager != null)
+            {
+                await _connectionManager.DisconnectAsync(roomId);
+            }
+            UpdateConnectButtonState();
+        }
+
+        /// <summary>
+        /// 移除房间标签页
+        /// </summary>
+        private async Task RemoveRoomAsync(string roomId)
+        {
+            // 先断开连接
+            if (_connectionManager != null)
+            {
+                await _connectionManager.RemoveRoomAsync(roomId);
+            }
+
+            // 移除TabPage
+            if (_roomTabs.TryRemove(roomId, out var roomTab))
+            {
+                roomTab.DisconnectRequested -= RoomTab_DisconnectRequested;
+                roomTab.CloseRequested -= RoomTab_CloseRequested;
+                _roomTabControl?.TabPages.Remove(roomTab);
+                roomTab.Dispose();
+            }
+
+            // 如果没有房间了，隐藏TabControl
+            if (_roomTabs.IsEmpty)
+            {
+                HideMultiRoomUI();
+            }
+
+            UpdateConnectButtonState();
+        }
+
+        /// <summary>
+        /// 显示多房间UI（TabControl），隐藏原有的4个GroupBox
+        /// </summary>
+        private void ShowMultiRoomUI()
+        {
+            groupBoxChat.Visible = false;
+            groupBoxMember.Visible = false;
+            groupBoxGiftFollow.Visible = false;
+            groupBoxWatchedUsers.Visible = false;
+
+            if (_roomTabControl != null)
+            {
+                _roomTabControl.Visible = true;
+            }
+
+            AdjustLayout();
+        }
+
+        /// <summary>
+        /// 隐藏多房间UI，恢复原有的4个GroupBox
+        /// </summary>
+        private void HideMultiRoomUI()
+        {
+            if (_roomTabControl != null)
+            {
+                _roomTabControl.Visible = false;
+            }
+
+            groupBoxChat.Visible = true;
+            groupBoxMember.Visible = true;
+            groupBoxGiftFollow.Visible = true;
+            groupBoxWatchedUsers.Visible = true;
+
+            AdjustLayout();
+        }
+
+        /// <summary>
+        /// 更新连接按钮状态
+        /// </summary>
+        private void UpdateConnectButtonState()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(UpdateConnectButtonState);
+                return;
+            }
+
+            bool hasAnyConnection = _connectionManager?.HasAnyConnection == true || _isConnected;
+            buttonConnect.Text = hasAnyConnection ? "添加房间" : "连接";
+            buttonConnect.Enabled = true;
+        }
+
+        #endregion
 
         /// <summary>
         /// 批量更新定时器事件
@@ -339,6 +667,14 @@ namespace DouyinDanmu
                 _appSettings.WatchedUserIds = [.. _watchedUserIds];
                 _appSettings.AutoScroll = checkBoxAutoScroll.Checked;
 
+                // 保存多房间配置
+                _appSettings.LiveRooms = _roomTabs.Values.Select(tab => new RoomConfig
+                {
+                    RoomId = tab.RoomId,
+                    LiveId = tab.LiveId,
+                    Enabled = true
+                }).ToList();
+
                 // 保存窗口状态（只在正常状态下保存位置和大小）
                 if (this.WindowState == FormWindowState.Normal)
                 {
@@ -375,38 +711,70 @@ namespace DouyinDanmu
         /// </summary>
         private void AdjustLayout()
         {
-            if (groupBoxMessages == null)
+            if (groupBoxMessages == null || panelConnection == null)
                 return;
 
-            // 计算可用宽度（减去边距和间距）
-            int availableWidth = groupBoxMessages.Width - 60; // 15 + 15 + 30 (左边距 + 右边距 + 间距)
-            int columnWidth = availableWidth / 4; // 改为四列
+            const int connectionHeight = 60;
+            const int statusHeight = 196;
+            const int margin = 12;
+            const int pad = 15;
+            const int gap = 10;
+            const int btnH = 28;
+            const int btnRowH = 36;
 
-            // 调整四个消息组的位置和大小
-            groupBoxChat.Location = new Point(15, 22);
-            groupBoxChat.Size = new Size(columnWidth, groupBoxMessages.Height - 70);
+            int clientW = this.ClientSize.Width;
+            int clientH = this.ClientSize.Height;
 
-            groupBoxMember.Location = new Point(15 + columnWidth + 5, 22);
-            groupBoxMember.Size = new Size(columnWidth, groupBoxMessages.Height - 70);
+            // 从下往上分配固定区域，剩余给消息区
+            // 1. 状态栏固定在底部
+            int statusTop = clientH - margin - statusHeight;
+            groupBoxStatus.SetBounds(margin, statusTop, clientW - margin * 2, statusHeight);
+            textBoxStatus.SetBounds(pad, 22, groupBoxStatus.Width - pad * 2, statusHeight - 32);
 
-            groupBoxGiftFollow.Location = new Point(15 + columnWidth * 2 + 10, 22);
-            groupBoxGiftFollow.Size = new Size(columnWidth, groupBoxMessages.Height - 70);
+            // 2. 按钮行固定在状态栏上方
+            int btnY = statusTop - btnRowH - 4;
+            checkBoxAutoScroll.Location = new Point(margin + pad, btnY + 5);
+            buttonSaveLog.SetBounds(clientW - margin - 85, btnY + 2, 85, btnH);
+            buttonClear.SetBounds(buttonSaveLog.Left - 95, btnY + 2, 85, btnH);
 
-            groupBoxWatchedUsers.Location = new Point(15 + columnWidth * 3 + 15, 22);
-            groupBoxWatchedUsers.Size = new Size(columnWidth, groupBoxMessages.Height - 70);
+            // 3. 消息区填充剩余空间
+            int msgTop = connectionHeight + margin;
+            int msgBottom = btnY - 4;
+            int msgHeight = msgBottom - msgTop;
+            if (msgHeight < 150) msgHeight = 150;
+            groupBoxMessages.SetBounds(margin, msgTop, clientW - margin * 2, msgHeight);
 
-            // 调整ListView大小
-            listViewChat.Size = new Size(columnWidth - 12, groupBoxMessages.Height - 92);
-            listViewMember.Size = new Size(columnWidth - 12, groupBoxMessages.Height - 92);
-            listViewGiftFollow.Size = new Size(columnWidth - 12, groupBoxMessages.Height - 92);
-            listViewWatchedUsers.Size = new Size(columnWidth - 12, groupBoxMessages.Height - 92);
+            int innerW = groupBoxMessages.Width - pad * 2;
+            int contentTop = 25;
+            int contentH = groupBoxMessages.Height - contentTop - 8;
+            if (contentH < 80) contentH = 80;
 
-            // 调整按钮位置
-            int buttonY = groupBoxMessages.Height - 32;
-            checkBoxAutoScroll.Location = new Point(15, buttonY);
-            buttonShowUnknownTypes.Location = new Point(groupBoxMessages.Width - 275, buttonY);
-            buttonClear.Location = new Point(groupBoxMessages.Width - 175, buttonY);
-            buttonSaveLog.Location = new Point(groupBoxMessages.Width - 90, buttonY);
+            bool isMultiRoom = _roomTabControl != null && _roomTabControl.Visible;
+
+            if (isMultiRoom)
+            {
+                _roomTabControl!.Dock = DockStyle.None;
+                _roomTabControl.SetBounds(pad, contentTop, innerW, contentH);
+            }
+            else
+            {
+                int topH = (int)(contentH * 0.60);
+                int bottomH = contentH - topH - gap;
+                int colW = (innerW - gap * 2) / 3;
+
+                groupBoxChat.SetBounds(pad, contentTop, colW, topH);
+                listViewChat.SetBounds(6, 20, colW - 12, topH - 26);
+
+                groupBoxMember.SetBounds(pad + colW + gap, contentTop, colW, topH);
+                listViewMember.SetBounds(6, 20, colW - 12, topH - 26);
+
+                int thirdW = innerW - (colW + gap) * 2;
+                groupBoxGiftFollow.SetBounds(pad + (colW + gap) * 2, contentTop, thirdW, topH);
+                listViewGiftFollow.SetBounds(6, 20, thirdW - 12, topH - 26);
+
+                groupBoxWatchedUsers.SetBounds(pad, contentTop + topH + gap, innerW, bottomH);
+                listViewWatchedUsers.SetBounds(6, 20, innerW - 12, bottomH - 26);
+            }
         }
 
         /// <summary>
@@ -424,11 +792,22 @@ namespace DouyinDanmu
             if (result == DialogResult.Cancel)
                 return;
 
-            // 清空界面显示
-            listViewChat.Items.Clear();
-            listViewMember.Items.Clear();
-            listViewGiftFollow.Items.Clear();
-            listViewWatchedUsers.Items.Clear();
+            // 清空多房间TabPage
+            if (_roomTabControl != null && _roomTabControl.Visible)
+            {
+                if (_roomTabControl.SelectedTab is RoomTabPage activeRoomTab)
+                {
+                    activeRoomTab.ClearMessages();
+                }
+            }
+            else
+            {
+                // 清空原有单房间界面显示
+                listViewChat.Items.Clear();
+                listViewMember.Items.Clear();
+                listViewGiftFollow.Items.Clear();
+                listViewWatchedUsers.Items.Clear();
+            }
 
             if (result == DialogResult.No)
             {
@@ -471,10 +850,33 @@ namespace DouyinDanmu
         {
             try
             {
+                // 确定要保存的ListViews来源
+                ListView chatLv, memberLv, giftFollowLv, watchedLv;
+                string roomLabel;
+
+                if (_roomTabControl != null && _roomTabControl.Visible
+                    && _roomTabControl.SelectedTab is RoomTabPage activeTab)
+                {
+                    var listViews = activeTab.GetAllListViews().ToList();
+                    chatLv = listViews[0];
+                    memberLv = listViews[1];
+                    giftFollowLv = listViews[2];
+                    watchedLv = listViews[3];
+                    roomLabel = activeTab.LiveId;
+                }
+                else
+                {
+                    chatLv = listViewChat;
+                    memberLv = listViewMember;
+                    giftFollowLv = listViewGiftFollow;
+                    watchedLv = listViewWatchedUsers;
+                    roomLabel = textBoxLiveId.Text.Trim();
+                }
+
                 using var dialog = new SaveFileDialog();
                 dialog.Filter = "文本文件 (*.txt)|*.txt|CSV文件 (*.csv)|*.csv";
                 dialog.DefaultExt = "txt";
-                dialog.FileName = $"抖音直播消息_{DateTime.Now:yyyyMMdd_HHmmss}";
+                dialog.FileName = $"抖音直播消息_{roomLabel}_{DateTime.Now:yyyyMMdd_HHmmss}";
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
@@ -483,106 +885,68 @@ namespace DouyinDanmu
                         StringComparison.OrdinalIgnoreCase
                     );
                     var separator = isCSV ? "," : "\t";
-                    var lines = new List<string>
-                    {
-                        // 添加聊天消息
-                        $"=== 聊天消息 ({listViewChat.Items.Count}条) ==="
-                    };
-                    if (isCSV)
-                    {
-                        lines.Add("时间,用户,用户ID,粉丝团等级,财富等级,聊天内容");
-                    }
-                    else
-                    {
-                        lines.Add("时间\t用户\t用户ID\t粉丝团等级\t财富等级\t聊天内容");
-                    }
+                    var lines = new List<string>();
 
-                    foreach (ListViewItem item in listViewChat.Items)
+                    // 添加聊天消息
+                    lines.Add($"=== 聊天消息 ({chatLv.Items.Count}条) ===");
+                    lines.Add(isCSV ? "时间,用户,用户ID,粉丝团等级,财富等级,聊天内容"
+                                    : "时间\t用户\t用户ID\t粉丝团等级\t财富等级\t聊天内容");
+                    foreach (ListViewItem item in chatLv.Items)
                     {
                         var values = new string[item.SubItems.Count];
                         for (int i = 0; i < item.SubItems.Count; i++)
-                        {
                             values[i] = item.SubItems[i].Text;
-                        }
                         lines.Add(string.Join(separator, values));
                     }
-
                     lines.Add("");
 
                     // 添加进场消息
-                    lines.Add($"=== 进场消息 ({listViewMember.Items.Count}条) ===");
-                    if (isCSV)
-                    {
-                        lines.Add("时间,用户,用户ID,粉丝团等级,财富等级,内容");
-                    }
-                    else
-                    {
-                        lines.Add("时间\t用户\t用户ID\t粉丝团等级\t财富等级\t内容");
-                    }
-
-                    foreach (ListViewItem item in listViewMember.Items)
+                    lines.Add($"=== 进场消息 ({memberLv.Items.Count}条) ===");
+                    lines.Add(isCSV ? "时间,用户,用户ID,粉丝团等级,财富等级,内容"
+                                    : "时间\t用户\t用户ID\t粉丝团等级\t财富等级\t内容");
+                    foreach (ListViewItem item in memberLv.Items)
                     {
                         var values = new string[item.SubItems.Count];
                         for (int i = 0; i < item.SubItems.Count; i++)
-                        {
                             values[i] = item.SubItems[i].Text;
-                        }
                         lines.Add(string.Join(separator, values));
                     }
-
                     lines.Add("");
 
                     // 添加礼物和关注消息
-                    lines.Add($"=== 礼物&关注消息 ({listViewGiftFollow.Items.Count}条) ===");
-                    if (isCSV)
-                    {
-                        lines.Add("时间,类型,用户,用户ID,粉丝团等级,财富等级,内容");
-                    }
-                    else
-                    {
-                        lines.Add("时间\t类型\t用户\t用户ID\t粉丝团等级\t财富等级\t内容");
-                    }
-
-                    foreach (ListViewItem item in listViewGiftFollow.Items)
+                    lines.Add($"=== 礼物&关注消息 ({giftFollowLv.Items.Count}条) ===");
+                    lines.Add(isCSV ? "时间,类型,用户,用户ID,粉丝团等级,财富等级,内容"
+                                    : "时间\t类型\t用户\t用户ID\t粉丝团等级\t财富等级\t内容");
+                    foreach (ListViewItem item in giftFollowLv.Items)
                     {
                         var values = new string[item.SubItems.Count];
                         for (int i = 0; i < item.SubItems.Count; i++)
-                        {
                             values[i] = item.SubItems[i].Text;
-                        }
                         lines.Add(string.Join(separator, values));
                     }
 
                     // 添加关注用户消息
-                    lines.Add($"=== 关注用户消息 ({listViewWatchedUsers.Items.Count}条) ===");
-                    if (isCSV)
-                    {
-                        lines.Add("时间,类型,用户,用户ID,粉丝团等级,财富等级,内容");
-                    }
-                    else
-                    {
-                        lines.Add("时间\t类型\t用户\t用户ID\t粉丝团等级\t财富等级\t内容");
-                    }
-
-                    foreach (ListViewItem item in listViewWatchedUsers.Items)
+                    lines.Add($"=== 关注用户消息 ({watchedLv.Items.Count}条) ===");
+                    lines.Add(isCSV ? "时间,类型,用户,用户ID,粉丝团等级,财富等级,内容"
+                                    : "时间\t类型\t用户\t用户ID\t粉丝团等级\t财富等级\t内容");
+                    foreach (ListViewItem item in watchedLv.Items)
                     {
                         var values = new string[item.SubItems.Count];
                         for (int i = 0; i < item.SubItems.Count; i++)
-                        {
                             values[i] = item.SubItems[i].Text;
-                        }
                         lines.Add(string.Join(separator, values));
                     }
 
                     // 添加统计信息
                     lines.Add("");
                     lines.Add("=== 统计信息 ===");
-                    lines.Add($"聊天消息: {listViewChat.Items.Count}条");
-                    lines.Add($"进场消息: {listViewMember.Items.Count}条");
-                    lines.Add($"礼物&关注消息: {listViewGiftFollow.Items.Count}条");
-                    lines.Add($"关注用户消息: {listViewWatchedUsers.Items.Count}条");
+                    lines.Add($"房间: {roomLabel}");
+                    lines.Add($"聊天消息: {chatLv.Items.Count}条");
+                    lines.Add($"进场消息: {memberLv.Items.Count}条");
+                    lines.Add($"礼物&关注消息: {giftFollowLv.Items.Count}条");
+                    lines.Add($"关注用户消息: {watchedLv.Items.Count}条");
                     lines.Add(
-                        $"总计: {listViewChat.Items.Count + listViewMember.Items.Count + listViewGiftFollow.Items.Count + listViewWatchedUsers.Items.Count}条"
+                        $"总计: {chatLv.Items.Count + memberLv.Items.Count + giftFollowLv.Items.Count + watchedLv.Items.Count}条"
                     );
                     lines.Add($"保存时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
 
@@ -1031,27 +1395,27 @@ namespace DouyinDanmu
                 // 保存设置
                 SaveSettings();
 
-                // 断开连接
-                if (_isConnected && _fetcher != null)
+                // 断开所有多房间连接
+                if (_connectionManager != null && _connectionManager.HasAnyConnection)
                 {
-                    e.Cancel = true; // 暂时取消关闭
+                    e.Cancel = true;
+                    UpdateStatus("正在断开所有房间连接...");
+                    await _connectionManager.DisconnectAllAsync().ConfigureAwait(false);
+                    await Task.Delay(1000).ConfigureAwait(false);
 
-                    UpdateStatus("正在断开连接...");
-                    await DisconnectAsync().ConfigureAwait(false);
+                    // 清理RoomTabPages
+                    foreach (var roomTab in _roomTabs.Values)
+                    {
+                        roomTab.Dispose();
+                    }
+                    _roomTabs.Clear();
 
-                    // 等待批量处理完成
-                    await Task.Delay(2000).ConfigureAwait(false);
+                    _connectionManager.Dispose();
+                    _loggingService?.Dispose();
 
-                    // 现在可以安全关闭
                     if (InvokeRequired)
                     {
-                        Invoke(
-                            new Action(() =>
-                            {
-                                e.Cancel = false;
-                                Close();
-                            })
-                        );
+                        Invoke(new Action(() => { e.Cancel = false; Close(); }));
                     }
                     else
                     {
@@ -1060,6 +1424,31 @@ namespace DouyinDanmu
                     }
                     return;
                 }
+
+                // 向后兼容：断开单房间连接
+                if (_isConnected && _fetcher != null)
+                {
+                    e.Cancel = true;
+
+                    UpdateStatus("正在断开连接...");
+                    await DisconnectAsync().ConfigureAwait(false);
+                    await Task.Delay(2000).ConfigureAwait(false);
+
+                    if (InvokeRequired)
+                    {
+                        Invoke(new Action(() => { e.Cancel = false; Close(); }));
+                    }
+                    else
+                    {
+                        e.Cancel = false;
+                        Close();
+                    }
+                    return;
+                }
+
+                // 释放ConnectionManager
+                _connectionManager?.Dispose();
+                _loggingService?.Dispose();
 
                 // 释放数据库连接
                 _databaseService?.Dispose();
@@ -1085,25 +1474,33 @@ namespace DouyinDanmu
             }
             catch (Exception ex)
             {
-                // 记录错误但不阻止关闭
                 System.Diagnostics.Debug.WriteLine($"关闭窗体时发生错误: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 连接按钮点击事件
+        /// 连接按钮点击事件 - 支持多房间
         /// </summary>
         private async void ButtonConnect_Click(object sender, EventArgs e)
         {
             try
             {
-                if (_isConnected)
+                var liveId = textBoxLiveId.Text.Trim();
+
+                // 如果已有多房间连接，添加新房间
+                if (_roomTabs.Count > 0 || (_connectionManager?.HasAnyConnection == true))
                 {
+                    await AddRoomAndConnectAsync(liveId);
+                }
+                else if (_isConnected)
+                {
+                    // 向后兼容：单房间断开
                     await DisconnectAsync().ConfigureAwait(false);
                 }
                 else
                 {
-                    await ConnectAsync().ConfigureAwait(false);
+                    // 使用新的多房间模式连接
+                    await AddRoomAndConnectAsync(liveId);
                 }
             }
             catch (Exception ex)
@@ -1126,9 +1523,6 @@ namespace DouyinDanmu
                 _fetcher.MessageReceived += OnMessageReceived;
                 _fetcher.StatusChanged += OnStatusChanged;
                 _fetcher.ErrorOccurred += OnErrorOccurred;
-
-                // 设置数据库当前直播间ID
-                _databaseService?.SetCurrentLiveId(textBoxLiveId.Text.Trim());
 
                 // 检查直播间状态，但不再拦截连接流程
                 var isLive = await _fetcher.GetRoomStatusAsync().ConfigureAwait(false);
@@ -1312,58 +1706,14 @@ namespace DouyinDanmu
         /// </summary>
         private void CheckBoxAutoScroll_CheckedChanged(object sender, EventArgs e)
         {
+            // 同步到所有RoomTabPage
+            foreach (var roomTab in _roomTabs.Values)
+            {
+                roomTab.SetAutoScroll(checkBoxAutoScroll.Checked);
+            }
             SaveSettings();
         }
 
-        /// <summary>
-        /// 显示未知消息类型统计
-        /// </summary>
-        private void BtnShowUnknownTypes_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                var unknownTypes = ProtobufParser.GetUnknownMessageTypes();
-
-                if (unknownTypes.Count == 0)
-                {
-                    MessageBox.Show(
-                        "暂无未知消息类型记录",
-                        "统计信息",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information
-                    );
-                    return;
-                }
-
-                var sb = new StringBuilder();
-                sb.AppendLine("未知消息类型统计：");
-                sb.AppendLine();
-
-                foreach (var kvp in unknownTypes.OrderByDescending(x => x.Value))
-                {
-                    sb.AppendLine($"{kvp.Key}: {kvp.Value} 次");
-                }
-
-                sb.AppendLine();
-                sb.AppendLine("这些消息类型可能是新增的或者暂未实现解析的类型。");
-
-                MessageBox.Show(
-                    sb.ToString(),
-                    "未知消息类型统计",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information
-                );
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    $"获取统计信息失败: {ex.Message}",
-                    "错误",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
-            }
-        }
 
         /// <summary>
         /// 设置按钮点击事件
@@ -1379,6 +1729,13 @@ namespace DouyinDanmu
             {
                 _watchedUserIds = settingsForm.WatchedUserIds;
                 _appSettings.UserInfos = settingsForm.UserInfos;
+
+                // 同步到所有RoomTabPage
+                foreach (var roomTab in _roomTabs.Values)
+                {
+                    roomTab.UpdateWatchedUserIds(_watchedUserIds);
+                }
+
                 UpdateStatus($"已更新关注用户列表，共{_watchedUserIds.Count}个用户");
 
                 // 自动保存设置
@@ -1800,14 +2157,26 @@ namespace DouyinDanmu
         private string GetUserIdFromListViewItem(ListViewItem item)
         {
             // 用户ID在不同ListView中的列索引
-            // 聊天消息: 列2, 进场消息: 列2, 礼物&关注: 列3, 关注用户: 列3
+            // 聊天消息: 列2, 进场消息: 列2 (6列: 时间,用户,用户ID,粉丝团,财富,内容)
+            // 礼物&关注: 列3, 关注用户: 列3 (7列: 时间,类型,用户,用户ID,粉丝团,财富,内容)
             var listView = item.ListView;
 
+            // 原有单房间ListViews
             if (listView == listViewChat || listView == listViewMember)
             {
                 return item.SubItems.Count > 2 ? item.SubItems[2].Text : "";
             }
             else if (listView == listViewGiftFollow || listView == listViewWatchedUsers)
+            {
+                return item.SubItems.Count > 3 ? item.SubItems[3].Text : "";
+            }
+
+            // 多房间模式：根据列数判断（6列=Chat/Member，7列=GiftFollow/Watched）
+            if (listView != null && listView.Columns.Count == 6)
+            {
+                return item.SubItems.Count > 2 ? item.SubItems[2].Text : "";
+            }
+            else if (listView != null && listView.Columns.Count == 7)
             {
                 return item.SubItems.Count > 3 ? item.SubItems[3].Text : "";
             }
@@ -1821,14 +2190,26 @@ namespace DouyinDanmu
         private string GetUserNameFromListViewItem(ListViewItem item)
         {
             // 用户名在不同ListView中的列索引
-            // 聊天消息: 列1, 进场消息: 列1, 礼物&关注: 列2, 关注用户: 列2
+            // 聊天消息: 列1, 进场消息: 列1 (6列)
+            // 礼物&关注: 列2, 关注用户: 列2 (7列)
             var listView = item.ListView;
 
+            // 原有单房间ListViews
             if (listView == listViewChat || listView == listViewMember)
             {
                 return item.SubItems.Count > 1 ? item.SubItems[1].Text : "";
             }
             else if (listView == listViewGiftFollow || listView == listViewWatchedUsers)
+            {
+                return item.SubItems.Count > 2 ? item.SubItems[2].Text : "";
+            }
+
+            // 多房间模式：根据列数判断
+            if (listView != null && listView.Columns.Count == 6)
+            {
+                return item.SubItems.Count > 1 ? item.SubItems[1].Text : "";
+            }
+            else if (listView != null && listView.Columns.Count == 7)
             {
                 return item.SubItems.Count > 2 ? item.SubItems[2].Text : "";
             }

@@ -2,6 +2,18 @@
 
 用于采集、保存和查看多个抖音直播间消息的本地监控工作台，提供 Windows 便携版和 Docker Compose 两种运行方式。
 
+<p align="center">
+  <a href="https://github.com/LiukerSun/DouyinDanmu/releases/latest">下载 Windows 便携版</a> ·
+  <a href="#界面预览">界面预览</a> ·
+  <a href="#windows-便携版">快速开始</a> ·
+  <a href="#docker-compose">Docker 部署</a> ·
+  <a href="#websocket-接入">WebSocket 接入</a>
+</p>
+
+[![DouyinDanmu 实时互动界面：直播间指标、弹幕、礼物与观众互动](assets/screenshots/live-messages.jpg)](assets/screenshots/live-messages.jpg)
+
+<p align="center"><sub>实时查看弹幕、礼物与观众互动。截图来自当前 Web 工作台，房间、用户和消息均为虚构演示数据。</sub></p>
+
 ## 功能
 
 - 管理多个直播间，支持搜索、排序、批量启停和独立采集状态。
@@ -12,6 +24,25 @@
 - 采集数据先写本地缓冲，确认入库后回收；支持重试、去重和断线后的增量订阅。
 - 每个直播间使用独立的逻辑 WebSocket channel 和恢复游标。
 - 普通模式展示观众行为和房间状态；debug 模式提供协议详情与未知字段结构分析。
+
+## 界面预览
+
+从多房间总览进入单个直播间，再到跨房间的历史记录查询。点击截图可查看原图。
+
+<table>
+  <tr>
+    <th width="50%">多房间监控</th>
+    <th width="50%">信息汇总与历史检索</th>
+  </tr>
+  <tr>
+    <td><a href="assets/screenshots/overview.jpg"><img src="assets/screenshots/overview.jpg" alt="多房间监控总览：采集状态、在线人数、弹幕和礼物统计" width="100%" /></a></td>
+    <td><a href="assets/screenshots/message-archive.jpg"><img src="assets/screenshots/message-archive.jpg" alt="信息汇总：跨房间查看历史消息，按直播间、消息类型、财富等级和粉丝等级筛选" width="100%" /></a></td>
+  </tr>
+  <tr>
+    <td>集中查看各房间状态与互动指标，支持搜索、排序、重点关注和批量管理。</td>
+    <td>汇总多个直播间的行为记录，支持关键词、消息类型、等级筛选及用户记录查询。</td>
+  </tr>
+</table>
 
 ## Windows 便携版
 

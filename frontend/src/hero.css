@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+:root { --accent: #6155d9; --accent-foreground: #fff; --focus: #8176e3; --radius: 0.5rem; }

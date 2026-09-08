@@ -1,0 +1,38 @@
+/* Each signal retains its text label; color adds a second way to scan. */
+[data-tone="slate"] { --tone-ink: #536175; --tone-bg: #eef1f5; --tone-line: #cbd3df; }
+[data-tone="teal"] { --tone-ink: #087766; --tone-bg: #e3f5ef; --tone-line: #9bd8c7; }
+[data-tone="blue"] { --tone-ink: #235bb1; --tone-bg: #e9f1ff; --tone-line: #b4cdf4; }
+[data-tone="violet"] { --tone-ink: #7040aa; --tone-bg: #f0e9fb; --tone-line: #ceb3ea; }
+[data-tone="amber"] { --tone-ink: #8d5c08; --tone-bg: #fff3d8; --tone-line: #e6cb85; }
+[data-tone="rose"] { --tone-ink: #ae355f; --tone-bg: #fde9f0; --tone-line: #efb4c8; }
+[data-tone="orange"] { --tone-ink: #a44b17; --tone-bg: #fff0e5; --tone-line: #efc0a0; }
+.console-app .message-chip, .console-dialog .message-chip { color: var(--tone-ink); background: var(--tone-bg); border: 1px solid var(--tone-line); font-size: 11px; font-weight: 500; line-height: 16px; height: auto; min-height: 20px; padding: 1px 6px; border-radius: 5px; gap: 4px; }
+.console-app .message-chip.unknown { border-style: dashed; }
+.message-profile .fans-badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.message-profile .user-level-badge { font-variant-numeric: tabular-nums; }
+.message-meta .message-type { border-color: transparent; }
+.message-row .message-avatar { background: var(--tone-bg); color: var(--tone-ink); box-shadow: inset 0 0 0 1px var(--tone-line); }
+.sourced-message { border-left: 3px solid #d4dbe5; }
+.sourced-message[data-message-type="chat"] { border-left-color: #7098d9; background: #fbfdff; }
+.sourced-message[data-message-type="enter"] { border-left-color: #64b4a2; background: #fbfefd; }
+.sourced-message[data-message-type="gift"] { border-left-color: #dbac50; background: #fffdf7; }
+.sourced-message[data-message-type="like"] { border-left-color: #d88aa5; background: #fffbfd; }
+.sourced-message[data-message-type="social"], .sourced-message[data-message-type="follow"] { border-left-color: #a789ce; background: #fdfbff; }
+.sourced-message[data-message-type="system"] { border-left-color: #a4afbf; background: #f7f8fa; }
+.console-app .message-room-label { color: var(--tone-ink); background: var(--tone-bg); }
+.console-app .gift-token { display: inline-flex; vertical-align: middle; max-width: 100%; gap: 7px; padding: 4px 8px; margin: 0 4px; min-height: 28px; font-size: 13px; line-height: 19px; white-space: normal; }
+.gift-token .gift-name { font-weight: 650; overflow-wrap: anywhere; }
+.gift-token .gift-number { margin: 0; color: inherit; white-space: nowrap; }
+.message-content .gift-progress { margin-left: 5px; color: #7d6c50; font-size: 11px; }
+.feed-heading-actions { display: flex; align-items: center; gap: 5px; }
+.console-app .color-guide-button { font-size: 12px; min-height: 30px; height: 30px; padding-inline: 8px; }
+.color-guide { display: grid; gap: 22px; }
+.color-guide h3 { font-size: 13px; font-weight: 600; color: #50465e; margin-bottom: 10px; }
+.color-guide-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.color-guide p { color: #82758f; font-size: 12px; line-height: 1.8; margin-top: 9px; }
+@media (max-width: 760px) {
+  .conversation-panel > .panel-heading { flex-wrap: wrap; }
+  .feed-heading-actions { margin-left: auto; }
+}
+
+.sourced-message[data-message-type="share"] { border-left-color: #7098d9; background: #fbfdff; }

@@ -1,0 +1,101 @@
+name: douyin-danmu
+services:
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    environment:
+      RABBITMQ_DEFAULT_USER: douyin
+      RABBITMQ_DEFAULT_PASS: local-demo-password
+      RABBITMQ_DEFAULT_VHOST: douyin
+    ports:
+      - "127.0.0.1:15673:15672"
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  backend:
+    command: ["douyin-pipeline"]
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: douyin
+      RABBITMQ_PASSWORD: local-demo-password
+      RABBITMQ_VHOST: douyin
+      REDIS_HOST: redis
+      DATABASE_PATH: /data/pipeline.db
+      INTERNAL_TOKEN: local-collector-token
+    volumes:
+      - backend-data:/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  collector:
+    build:
+      context: .
+      dockerfile: docker/collector.Dockerfile
+    environment:
+      AMQP_URL: amqp://douyin:local-demo-password@rabbitmq:5672/douyin
+      BACKEND_URL: http://backend:8080
+      INTERNAL_TOKEN: local-collector-token
+      SPOOL_DIR: /data/spool
+      RAW_CAPTURE_DIR: /data/raw-capture
+      DOUYIN_ROOM_COOKIE_DIR: /data/config/rooms
+    volumes:
+      - collector-data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+  auth:
+    build:
+      context: .
+      dockerfile: docker/auth.Dockerfile
+    environment:
+      AUTH_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - auth-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8091/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  rabbit-data:
+  backend-data:
+  collector-data:
+  auth-data:

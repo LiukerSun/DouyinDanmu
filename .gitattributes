@@ -1,0 +1,13 @@
+# Keep cross-platform source deterministic; Windows launchers use CRLF on checkout.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.png binary
+*.webp binary
+*.woff2 binary
+
+# Preserve the original version and upstream license text verbatim.
+legacy/winforms/** -text -whitespace
+portable/licenses/** -whitespace

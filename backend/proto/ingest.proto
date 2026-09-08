@@ -1,0 +1,16 @@
+syntax = "proto3";
+package pipeline;
+message RawFrameEnvelope {
+  uint32 schema_version = 1;
+  string frame_id = 2;
+  string live_id = 3;
+  string room_id = 4;
+  string session_id = 5;
+  uint64 session_seq = 6;
+  int64 received_at_ms = 7;
+  bytes payload = 8;
+  string payload_sha256 = 9;
+  string source = 10;
+  string kind = 11;
+  uint64 desired_version = 12;
+}

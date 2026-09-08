@@ -1,0 +1,4 @@
+# Explicit opt-in only; not loaded by an ordinary `docker compose up`.
+services:
+  backend:
+    command: ["douyin-pipeline", "--debug"]

@@ -1,0 +1,41 @@
+.archive-panel { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; margin: 0 24px; overflow: hidden; background: white; border: 1px solid var(--studio-line); border-radius: 12px; }
+.archive-panel h2 { display: flex; gap: 8px; align-items: center; }
+.archive-tools { display: flex; flex-direction: column; gap: 14px; padding: 18px; border-bottom: 1px solid var(--studio-line); }
+.archive-filter-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; align-items: end; }
+.archive-filter-grid .studio-select { display: flex; flex-direction: column; align-items: stretch; gap: 7px; width: 100%; min-width: 0; }
+.archive-filter-grid .label { font-size: 12px; color: #76738b; }
+.archive-user-scope { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 8px; background: #f1effd; color: #51479b; }
+.archive-user-scope .button { margin-left: auto; }
+.archive-result-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 18px; font-size: 12px; color: #544b6d; }
+.archive-result-heading > span { color: #8d859b; }
+.archive-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 60px 20px; color: #898096; text-align: center; }
+.archive-empty > .anticon { font-size: 26px; }
+.archive-error { margin: 10px 18px; }
+.archive-pagination > div { display: flex; gap: 8px; }
+.console-app .message-user-history { min-height: 22px; height: 22px; padding: 0 5px; font-size: 11px; color: #79718d; }
+.archive-results time { font-size: 10px; }
+/* A compact ledger for history; the live monitor keeps its own message layout. */
+.archive-results.message-list { gap: 4px; padding: 8px; }
+.archive-results .sourced-message { display: grid; grid-template-columns: 154px minmax(0,1fr); align-items: center; gap: 12px; padding: 8px 10px; border-radius: 4px; }
+.console-app .archive-results .message-room-label { margin: 0; max-width: 100%; width: 100%; min-height: 22px; height: 22px; padding-inline: 6px; justify-content: flex-start; align-self: start; }
+.archive-results .message-row { align-items: center; gap: 8px; }
+.archive-results .message-body { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.archive-results .message-meta { display: contents; }
+.archive-results .message-content { flex: 1 1 180px; min-width: 0; font-size: 12px; line-height: 22px; }
+.archive-results .message-content--inline { flex: none; }
+.archive-results .message-user-history { order: 3; }
+.console-app .archive-results .message-user-history { min-height: 22px; height: 22px; }
+.archive-results time { order: 4; }
+.console-app .archive-results .gift-token { padding: 1px 6px; min-height: 22px; font-size: 12px; line-height: 18px; gap: 5px; }
+@media (max-width: 1100px) {
+  .archive-results .sourced-message { grid-template-columns: 120px minmax(0,1fr); gap: 8px; }
+  .archive-results .message-body > .message-content { flex-basis: 100%; }
+}
+@media (max-width: 600px) {
+  .archive-results .sourced-message { grid-template-columns: minmax(0,1fr); gap: 4px; padding: 7px 8px; }
+  .console-app .archive-results .message-room-label { width: auto; max-width: 100%; justify-self: start; }
+  .archive-results .message-row { align-items: flex-start; }
+}
+@media (max-width: 1100px) { .archive-filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .archive-filter-grid > .button { justify-self: start; } }
+@media (max-width: 1020px) { .archive-panel { flex: none; height: max(660px, calc(100dvh - 170px)); margin-inline: 14px; } }
+@media (max-width: 600px) { .archive-panel { height: max(880px, calc(100dvh - 170px)); } .archive-tools { padding: 12px; } .archive-result-heading { padding: 10px 12px; } .archive-result-heading > span { display: none; } .archive-pagination { gap: 8px; } }

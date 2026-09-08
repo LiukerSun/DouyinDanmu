@@ -1,0 +1,117 @@
+.cookie-settings {
+  background: #fff;
+  border: 1px solid #e9edf4;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.cookie-settings-heading,
+.cookie-settings-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.cookie-settings-heading { justify-content: space-between; }
+.cookie-settings-heading .anticon { color: #8170c5; }
+.cookie-settings h3 { margin: 0; font-size: 14px; font-weight: 600; color: #46556c; }
+.cookie-settings-heading span:not(.anticon) { color: #8290a5; font-size: 11px; }
+.cookie-settings-heading .button { border-radius: 8px; font-size: 12px; color: #687890; }
+.cookie-room-scope { margin: 9px 0 0; color: #7e8ba0; font-size: 12px; overflow-wrap: anywhere; }
+.cookie-settings form { margin-top: 18px; }
+.cookie-settings form > p { margin: 0 0 16px; color: #77869b; font-size: 12px; line-height: 1.9; }
+.cookie-settings label { display: block; color: #4f607a; font-size: 12px; font-weight: 500; margin-bottom: 8px; }
+
+/* One shared field outline; remove the standalone HeroUI input's inner pill. */
+.cookie-input-row {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid #dfe5ee;
+  border-radius: 8px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+.cookie-input-row:focus-within { border-color: #a99adb; box-shadow: 0 0 0 3px #f0edfa; }
+.cookie-input-row .input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #46566f;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+.cookie-input-row .input::placeholder { font-family: inherit; color: #97a3b5; font-size: 11px; }
+.cookie-input-row .cookie-visibility {
+  flex: 0 0 42px;
+  width: 42px;
+  min-width: 42px;
+  height: 36px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: #7d8da3;
+  font-size: 16px;
+}
+.cookie-input-row .cookie-visibility:hover { background: #edf1f6; color: #8170c5; }
+
+.cookie-settings-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 16px 0 20px; }
+.cookie-settings-actions .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: none;
+}
+.cookie-settings-actions .cookie-paste-button { border: 1px solid #dfe5ee; color: #63758f; background: #fff; }
+.cookie-settings-actions .cookie-paste-button:hover { background: #f4f7fb; border-color: #cbd5e3; }
+.cookie-settings-actions .cookie-save-button { border: 1px solid transparent; background: #6155d9; color: #fff; }
+.cookie-settings-actions .cookie-save-button:hover { background: #5247c7; }
+.cookie-settings-actions .cookie-clear-button { border: 1px solid transparent; background: transparent; color: #ab6677; }
+.cookie-settings-actions .cookie-clear-button:hover { background: #fff0f4; color: #ba5272; }
+.cookie-settings-actions .button:disabled { opacity: 1; cursor: not-allowed; }
+.cookie-settings-actions .cookie-save-button:disabled { background: #e5dff7; color: #9b8bbb; }
+.cookie-settings-actions .cookie-paste-button:disabled,
+.cookie-settings-actions .cookie-clear-button:disabled { color: #a7b0be; background: #f5f7fa; border-color: transparent; }
+
+.cookie-help { margin: 0 0 18px; padding: 12px 14px; border: 1px solid #e7ecf3; border-radius: 8px; background: #f8fafc; color: #75849a; font-size: 12px; line-height: 1.9; }
+/* Tailwind preflight removes native list markers, so restore them here. */
+.cookie-help ol { list-style: decimal outside; padding-left: 22px; margin: 12px 0 0; }
+.cookie-help li { display: list-item; padding-left: 3px; margin: 8px 0; overflow-wrap: anywhere; }
+.cookie-help li::marker { color: #91a0b5; font-variant-numeric: tabular-nums; }
+.cookie-help a { color: #8170c5; margin: 0 3px; text-decoration: underline; text-underline-offset: 3px; }
+.cookie-settings form > .cookie-storage-note { margin-bottom: 0; padding-top: 14px; border-top: 1px solid #edf0f5; color: #8795a8; font-size: 11px; }
+.cookie-settings-result { margin-top: 12px; padding: 10px 12px; border-radius: 7px; background: #f0faf5; color: #408b6b; font-size: 12px; line-height: 1.8; }
+
+@media (max-width: 520px) {
+  .cookie-settings { padding: 14px; }
+  .cookie-settings-heading { align-items: flex-start; gap: 8px; }
+  .cookie-settings-heading > div { flex-wrap: wrap; gap: 6px; }
+  .cookie-settings-heading .button { flex-shrink: 0; }
+  .cookie-input-row .input { font-size: 16px; }
+  .cookie-settings-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cookie-settings-actions .button { width: 100%; padding-inline: 9px; height: 40px; }
+  .cookie-settings-actions .cookie-clear-button { grid-column: 1 / -1; }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "douyin-collector",
+  "private": true,
+  "version": "0.2.0",
+  "type": "commonjs",
+  "dependencies": {
+    "amqplib": "0.10.9",
+    "protobufjs": "8.8.0",
+    "ws": "8.21.3"
+  }
+}

@@ -1,0 +1,15 @@
+**/node_modules
+**/build*
+**/dist
+**/.git
+**/*.log
+logs
+messages.json
+.claude
+.codex
+.cache
+docs
+DESIGN.md
+backend/third_party
+secrets
+release

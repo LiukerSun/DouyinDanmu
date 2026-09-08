@@ -1,261 +1,153 @@
-# 抖音直播弹幕采集工具 (DouyinDanmu)
+# DouyinDanmu
 
-[![.NET](https://img.shields.io/badge/.NET-8.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/8.0)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
-[![License](https://img.shields.io/badge/license-Educational-green.svg)](#许可证)
-[![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)](#版本历史)
+用于采集、保存和查看多个抖音直播间消息的本地监控工作台，提供 Windows 便携版和 Docker Compose 两种运行方式。
 
-一个基于 C# .NET 8.0 和 WinForms 开发的抖音直播弹幕实时采集工具，支持**多房间同时采集**、实时抓取、数据库存储、智能过滤和数据导出。
+## 功能
 
-## ✨ 核心功能
+- 管理多个直播间，支持搜索、排序、批量启停和独立采集状态。
+- 展示弹幕、礼物、关注、分享、进场、点赞、粉丝团和已识别的直播通知。
+- 查看主播资料、在线人数、累计互动指标、用户记录及历史消息。
+- 按直播间配置 Cookie，使用管理员账号登录工作台。
+- 使用 C++ / Protobuf 解析消息，将事件、原始载荷和解析详情持久化到 SQLite。
+- 采集数据先写本地缓冲，确认入库后回收；支持重试、去重和断线后的增量订阅。
+- 每个直播间使用独立的逻辑 WebSocket channel 和恢复游标。
+- 普通模式展示观众行为和房间状态；debug 模式提供协议详情与未知字段结构分析。
 
-### 🔄 实时采集
-- **多房间支持** - 同时连接并采集多个直播间的弹幕消息
-- **WebSocket连接** - 通过WebSocket实时接收抖音直播间消息
-- **多类型消息** - 支持聊天、礼物、点赞、进场、关注等多种消息类型
-- **智能重连** - 网络异常时自动重连，支持指数退避策略
-- **签名生成** - 集成JavaScript引擎生成a_bogus和__ac_signature签名
+## Windows 便携版
 
-### 💾 数据管理
-- **SQLite数据库** - 本地数据库持久化存储所有消息，支持多房间数据隔离
-- **批量操作** - 优化的批量插入和查询，提升性能
-- **数据导出** - 支持TXT/CSV格式导出，包含完整统计信息
-- **历史查询** - 内置数据库查询界面，支持条件筛选
+[下载 v2.0.0 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.0.0/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.0.0/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.0.0)
 
-### 🎯 智能过滤
-- **用户关注** - 支持关注特定用户，高亮显示其消息
-- **消息分类** - 按消息类型分类显示（聊天/礼物/进场/关注）
-- **实时统计** - 显示消息数量、用户数量等实时统计信息
+系统要求：**Windows 10（1903 或更新版本）/ Windows 11，x64**。运行环境已包含在发布包中，无需安装 Docker、Node.js、数据库或编译器。
 
-### 🖥️ 现代界面
-- **分类显示** - 多个ListView分别显示不同类型的消息
-- **右键菜单** - 支持用户关注、消息复制等快捷操作
-- **自动滚动** - 可配置的自动滚动功能
-- **双缓冲** - 减少界面闪烁，提升用户体验
+1. 将 ZIP 完整解压到有写入权限的目录。
+2. 双击 `start.cmd`，浏览器会打开 [本地工作台](http://localhost:3000)。
+3. 首次访问创建管理员账号，然后添加直播间号或直播链接。
 
-## 🏗️ 技术架构
+请从解压后的目录运行，保留包内的 `app`、`bin`、`runtime` 和 `web` 目录。首次启动无需下载运行依赖，采集直播需要联网。
 
-### 分层设计
-```
-DouyinDanmu/
-├── Models/                 # 数据模型层
-│   ├── LiveMessage.cs         # 消息模型定义
-│   ├── AppConfig.cs           # 配置模型
-│   ├── AppSettings.cs         # 应用设置
-│   ├── NetworkSettings.cs     # 网络配置模型
-│   └── UserInfo.cs            # 用户信息模型
-├── Services/              # 服务层
-│   ├── DouyinLiveFetcher.cs    # 核心抓取服务
-│   ├── ConnectionManager.cs    # 多房间连接管理服务
-│   ├── DatabaseService.cs      # 数据库服务
-│   ├── SignatureGenerator.cs   # 签名生成服务 (a_bogus/__ac_signature)
-│   ├── ProtobufParser.cs       # Protobuf解析服务
-│   ├── UIUpdateService.cs      # UI更新服务
-│   ├── PerformanceMonitor.cs   # 性能监控服务
-│   ├── LoggingService.cs       # 结构化日志服务
-│   └── SettingsManager.cs      # 设置管理服务
-├── UI层/
-│   ├── Form1.cs              # 主窗体
-│   ├── SettingsForm.cs       # 设置窗体
-│   └── DatabaseQueryForm.cs  # 数据库查询窗体
-└── Tests/                    # 测试项目
-```
+| 命令 | 用途 |
+| --- | --- |
+| `start.cmd` | 普通模式启动并打开网页 |
+| `start-debug.cmd` | 开启协议诊断 |
+| `stop.cmd` | 停止程序，保留数据 |
+| `start.cmd --port 3001` | 指定网页端口 |
+| `start.cmd --no-browser` | 启动服务，不自动打开浏览器 |
 
-### 核心技术栈
-- **UI框架**: WinForms (.NET 8.0)
-- **数据库**: SQLite + Microsoft.Data.Sqlite
-- **网络通信**: WebSocket (ClientWebSocket) + HttpClient
-- **JavaScript引擎**: Microsoft.ClearScript.V8 (用于签名生成)
-- **JSON处理**: System.Text.Json + Newtonsoft.Json
-- **Protobuf**: 自定义解析器处理抖音消息协议
-- **内存优化**: ArrayPool、内存池、批量处理
+也可在启动窗口按 Ctrl+C 停止。同一解压目录只能运行一个实例；服务仅监听本机地址。
 
-### 性能优化
-- **内存池**: 使用ArrayPool减少内存分配
-- **批量处理**: UI更新和数据库操作均采用批量处理
-- **双缓冲**: ListView双缓冲减少界面闪烁
-- **异步处理**: 全面使用async/await模式
-- **连接池**: 数据库连接池优化
+## Docker Compose
 
-## 🚀 快速开始
-
-### 系统要求
-- **操作系统**: Windows 10/11 (x64)
-- **运行时**: .NET 8.0 Runtime (自包含版本无需安装)
-
-### 📦 下载运行
-
-从 [Releases](../../releases) 页面下载最新版本，或使用构建脚本编译：
+需要 Docker Engine / Docker Desktop 和 Docker Compose。Windows 的 Docker Desktop 应使用 Linux containers。在仓库根目录运行：
 
 ```bash
-# 克隆项目
-git clone git@github.com:LiukerSun/DouyinDanmu.git
-cd DouyinDanmu
-
-# 快速构建所有版本
-cd build-scripts
-.\quick-release.bat
-
-# 或者直接运行开发版本
-dotnet run
+docker compose up -d --build
 ```
 
-### 构建版本说明
-构建脚本会生成四个不同的版本：
-
-1. **最小化版本** - 需要.NET 8.0运行时，体积最小
-2. **单文件版本** - 单个可执行文件，自包含
-3. **精简版本** - 经过裁剪优化，自包含
-4. **快速启动版本** - 启动速度最快，自包含
-
-### 使用步骤
-1. 运行 `DouyinDanmu.exe`
-2. 输入抖音直播间ID（支持直播间URL或纯数字ID）
-3. 点击"连接"开始采集
-4. **多房间支持**：可以同时连接多个直播间进行采集
-5. 在不同标签页查看分类消息：
-   - **聊天** - 用户发送的文字消息
-   - **礼物/关注** - 礼物和关注消息
-   - **进场** - 用户进入直播间消息
-   - **关注用户** - 已关注用户的消息
-6. 右键用户名可添加关注
-7. 使用"保存日志"导出数据
-
-## 📋 支持的消息类型
-
-| 消息类型 | 说明 | 包含信息 |
-|---------|------|----------|
-| 💬 **Chat** | 聊天消息 | 用户名、内容、时间戳、粉丝团等级 |
-| 🎁 **Gift** | 礼物消息 | 用户名、礼物名称、数量、价值 |
-| 👍 **Like** | 点赞消息 | 用户名、点赞数量 |
-| 👋 **Member** | 进场消息 | 用户名、进场时间 |
-| ❤️ **Social** | 关注消息 | 用户名、关注时间 |
-| 📊 **RoomStats** | 直播间统计 | 在线人数、总观看数 |
-| 🏆 **Fansclub** | 粉丝团消息 | 粉丝团相关活动 |
-| 🎭 **EmojiChat** | 表情聊天 | 表情消息 |
-
-## ⚙️ 配置选项
-
-### 界面设置
-- **最大显示消息数量**: 100-10000条
-- **UI更新间隔**: 50-1000毫秒
-- **自动滚动**: 开启/关闭
-- **字体大小**: 8-20pt
-- **主题模式**: 明亮/暗黑/自动
-
-### 性能设置
-- **批量处理大小**: 10-500条
-- **性能监控**: 开启/关闭
-- **监控间隔**: 1-60秒
-- **内存清理阈值**: 50-1000MB
-- **自动GC**: 开启/关闭
-
-### 网络设置
-- **连接超时**: 5-60秒
-- **重连间隔**: 1-30秒
-- **最大重连次数**: 0-10次
-- **心跳间隔**: 10-120秒
-- **最大并发房间数**: 1-10个房间
-- **指数退避重连**: 启用后重连间隔会逐渐增加
-
-### 数据库设置
-- **批量插入大小**: 10-1000条
-- **数据保留天数**: 1-365天
-- **自动清理**: 开启/关闭
-- **连接池大小**: 1-20个连接
-
-## 🧪 测试
-
-项目包含完整的单元测试框架：
+启动后访问 [本地工作台](http://localhost:3000)，创建管理员账号并添加直播间。
 
 ```bash
-# 运行所有测试
-dotnet test
+# 查看服务状态
+docker compose ps
 
-# 运行特定测试
-dotnet test --filter "Category=Unit"
+# 停止服务，保留数据
+docker compose stop
 
-# 生成覆盖率报告
-dotnet test --collect:"XPlat Code Coverage"
+# 恢复服务
+docker compose up -d
 ```
 
-## 🔍 常见问题
+开启协议诊断：
 
-### 无法连接直播间
-1. 检查网络连接状态
-2. 确认直播间ID正确且正在直播
-3. 查看应用程序日志获取详细错误信息
-4. 尝试重启应用程序
+```bash
+docker compose -f compose.yaml -f compose.debug.yaml up -d --build
+```
 
-### 连接成功但收不到消息
-1. 选择人气较高的直播间进行测试
-2. 检查网络连接的稳定性
-3. 在设置中启用详细日志记录
-4. 确认JavaScript引擎正常工作
+恢复普通模式：
 
-### 性能问题
-1. 调整最大显示消息数量
-2. 启用自动垃圾回收
-3. 降低批量处理大小
-4. 关闭不必要的性能监控
+```bash
+docker compose -f compose.yaml up -d
+```
 
-### 数据导出问题
-1. 确保有足够的磁盘空间
-2. 检查导出目录的写入权限
-3. 尝试导出较小的时间范围
+Windows 也可使用 `./start.ps1 -DebugMode` 或 `./start.ps1`。切换模式后刷新页面。
 
-## 🔄 版本历史
+Compose 包含网页入口、登录服务、采集器、C++ 后端、RabbitMQ 和 Redis，默认向本机开放网页端口 `3000` 和 RabbitMQ 管理端口 `15673`。便携版使用本地投递与 SQLite 统计，不需要这些外部服务。
 
-### v1.6.0 - 当前版本
-- ✅ **多房间支持** - 同时连接并采集多个直播间的弹幕消息
-- ✅ **连接管理重构** - 全新的ConnectionManager架构，支持独立的房间连接管理
-- ✅ **a_bogus签名** - 集成JavaScript引擎生成a_bogus签名
-- ✅ **连接状态优化** - 细粒度的连接状态管理（连接中、已连接、重连中、失败等）
-- ✅ **共享签名生成器** - 多房间共享同一签名生成器，提升性能
-- ✅ **向后兼容** - 保持与单房间模式的完全兼容
+## 数据与备份
 
-### v1.5.0
-- ✅ 完整的分层架构重构
-- ✅ 新增配置管理系统
-- ✅ 实现结构化日志系统
-- ✅ 优化连接管理和重连机制
-- ✅ 添加UI更新服务
-- ✅ 统一使用System.Text.Json
-- ✅ 新增单元测试框架
-- ✅ 完善错误处理和资源管理
-- ✅ 性能优化和内存管理改进
+便携版的数据保存在解压目录下：
 
-## 🛠️ 开发说明
+| 路径 | 内容 |
+| --- | --- |
+| `data/pipeline.db` | 房间、消息、统计和解析详情 |
+| `data/auth/` | 管理员账号资料 |
+| `data/config/rooms/` | 每个直播间的 Cookie 配置 |
+| `data/spool/` | 待确认入库的采集缓冲 |
+| `data/.runtime/` | 运行锁及本机控制信息 |
+| `logs/` | 运行日志 |
 
-### 开发环境
-- Visual Studio 2022 或 VS Code
-- .NET 8.0 SDK
-- Windows 10/11
+备份或升级前先停止程序，再复制**整个 `data/` 目录**。升级时，将备份的数据目录放入新版解压目录后启动。不要只复制正在使用的 SQLite 文件，运行期间可能同时存在 WAL/SHM 文件。
 
-### 项目结构说明
-- **Models**: 数据模型和配置模型
-- **Services**: 核心业务逻辑服务
-- **UI**: WinForms界面层
-- **Tests**: 单元测试项目
-- **build-scripts**: 构建和发布脚本
+Docker 使用 `backend-data`、`collector-data`、`auth-data` 和 `rabbit-data` 命名卷。备份前停止 Compose 服务，并备份这些卷；实际卷名带有 Compose 项目前缀。`docker compose down -v` 会删除命名卷中的数据，不应作为普通停机命令。
 
-### 贡献指南
-1. Fork 项目
-2. 创建功能分支
-3. 提交更改
-4. 推送到分支
-5. 创建 Pull Request
+Cookie、账号资料、数据库和日志可能包含私人信息，请保存在受控目录中，不要提交到源码仓库或加入分发包。Docker 与便携版的数据不会自动迁移。
 
-## 📄 许可证
+## WebSocket 接入
 
-本项目仅用于教育和学习目的。请遵守相关法律法规，不得用于商业用途。
+入口为 `ws://localhost:3000/ws`，需要有效的工作台登录会话。通过 HTTPS 部署时使用 `wss://`。同源浏览器会自动携带会话 Cookie。
 
-## 🙏 致谢
+**每个直播间按 `live_id` 建立独立逻辑 channel。** 一条 WebSocket 最多订阅 32 个直播间，每间房分别维护游标；退订一个房间不影响其他订阅。
 
-本项目受到以下项目的启发：
-- [@saermart/DouyinLiveWebFetcher](https://github.com/saermart/DouyinLiveWebFetcher) - 原始Python版本
-- JavaScript签名算法来源于上述项目
+以下示例在已登录工作台的同源页面运行，将 `liveId` 替换为已添加的直播间号：
 
----
+```javascript
+const liveId = '123456789';
+const response = await fetch(`/api/rooms/${liveId}/snapshot`);
+if (!response.ok) throw new Error('读取房间快照失败');
+const snapshot = await response.json();
+let cursor = snapshot.through_seq;
+// 使用 snapshot.events 和 snapshot.state_events 初始化界面。
+const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const socket = new WebSocket(`${scheme}//${location.host}/ws`);
 
-**⚠️ 免责声明**: 本项目仅用于技术学习和研究，请用户自行承担使用风险和责任。
+socket.addEventListener('open', () => {
+  socket.send(JSON.stringify({
+    action: 'subscribe', live_id: liveId, after_seq: cursor,
+  }));
+});
+socket.addEventListener('message', ({ data }) => {
+  const batch = JSON.parse(data);
+  if (batch.type !== 'event_batch' || batch.live_id !== liveId) return;
+  console.log(batch.events, batch.state_events);
+  cursor = batch.through_seq;
+});
+// 退订：socket.send(JSON.stringify({ action: 'unsubscribe', live_id: liveId }));
+```
+
+服务端通过 `subscribed` 确认订阅，通过 `event_batch` 返回增量。`events` 用于行为展示，`state_events` 用于更新房间指标。每次处理完批次后都应保存 `through_seq`，即使该批没有展示消息；重连后用保存的游标再次订阅。UID 和游标使用字符串，避免 64 位整数精度丢失。
+
+## 从源码构建
+
+Docker 方式使用前述 `docker compose up -d --build`，构建入口位于 [`docker/`](docker)。
+
+构建 Windows 便携包需要 Windows x64、PowerShell、MinGW-w64 UCRT（`gcc`、`g++`、`windres`）、CMake 3.20+ 和 Ninja，并将工具加入 PATH。在仓库根目录运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File portable/build-windows.ps1
+```
+
+[`portable/build-windows.ps1`](portable/build-windows.ps1) 下载并校验固定版本 Node.js，编译后端、启动器与前端，生成 ZIP 和校验文件。构建需要联网，输出位于 `release/`。可通过 `-OutputDirectory` 指定尚不存在的输出目录，通过 `-Jobs` 指定编译并行数。
+
+## 使用限制
+
+- 仅能保存采集连接实际收到的消息；平台未下发、网络中断或协议变化可能造成数据缺失。
+- 部分消息仅能解析字段结构，未知字段的业务含义不一定已确认。协议状态保存在后端，普通行为列表不会展示所有消息类型。
+- 程序采用单机存储和单管理员工作空间，未提供多租户权限或多机高可用。
+- 历史数据会持续增长，没有自动清理策略，需要定期检查磁盘空间并备份。
+- 默认配置面向本机使用；对外部署需配置 HTTPS、允许来源和独立的服务凭据。
+- 旧 WinForms 版本的配置与数据不会自动迁移到当前工作台。
+
+## 第三方许可与旧版
+
+运行时及构建依赖包含 Node.js、Protobuf、Boost、SQLite、zlib、React、HeroUI 等组件，其许可文件随便携包保存在 `licenses/`。中文字体许可见 [`OFL-NotoSansSC.txt`](frontend/public/licenses/OFL-NotoSansSC.txt)，原生工具链许可见 [`portable/licenses/`](portable/licenses)。使用和分发时应保留对应许可文件。
+
+原 C# WinForms 项目位于 [`legacy/winforms/`](legacy/winforms)，该目录属于独立的旧版实现。当前 Web 工作台使用本页所列的便携版或 Docker 入口。

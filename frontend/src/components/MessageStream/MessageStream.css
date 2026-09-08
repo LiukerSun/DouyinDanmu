@@ -1,0 +1,52 @@
+.message-stream {
+  height: 100%;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.message-stream::-webkit-scrollbar {
+  width: 6px;
+}
+
+.message-stream::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-stream::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.message-stream::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.message-stream-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  min-height: 200px;
+}
+
+.message-item {
+  transition: background-color 0.3s ease;
+  border-bottom: none !important;
+  padding: 8px 16px !important;
+}
+
+.message-item:hover {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+.message-item .ant-list-item-meta {
+  align-items: center;
+}
+
+.message-item .ant-list-item-meta-title {
+  margin-bottom: 2px !important;
+}
+
+.message-item .ant-list-item-meta-description {
+  margin-top: 0 !important;
+}

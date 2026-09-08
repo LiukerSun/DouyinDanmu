@@ -1,0 +1,42 @@
+# DouyinDanmu Configuration File
+# Copy this file to config.toml and modify as needed.
+
+[server]
+port = 8080
+host = "0.0.0.0"
+
+[database]
+path = "./data/douyin_danmu.db"
+
+[capture]
+# Douyin live room live_id list (numeric part from URL)
+rooms = []
+# Heartbeat interval in seconds
+heartbeat_interval = 5
+# Reconnect interval in seconds
+reconnect_interval = 5
+# Maximum reconnection attempts
+max_reconnect_attempts = 10
+# Path to sign.js for X-Bogus signature generation
+sign_js_path = "./scripts/sign.js"
+# Path to a_bogus.js for a_bogus signature generation
+a_bogus_js_path = "./scripts/a_bogus.js"
+# User-Agent for HTTP requests
+user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"
+
+[storage]
+# Full storage mode. Sampling/aggregation strategies may be added later.
+
+[notification]
+# Message types that trigger notifications
+trigger_types = ["gift", "social"]
+
+[log]
+# Log level: trace / debug / info / warn / error
+level = "info"
+# Log file path (empty string for console-only)
+file = "./logs/app.log"
+# Maximum log file size in MB before rotation
+max_size_mb = 50
+# Maximum number of rotated log files to keep
+max_files = 5

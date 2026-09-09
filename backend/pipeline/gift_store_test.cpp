@@ -421,20 +421,46 @@ void message_history_search() {
 
 void saved_detail_upgrade() {
     TemporaryDatabase database;Store store;store.target("111","douyin",true);
-    GiftSortMessage sort;sort.set_sort_type(3);sort.set_scene_config(std::string("\x10\xff\x1f",3));
-    auto unknown=observed_event("old-unknown","WebcastGiftSortMessage",sort.SerializeAsString(),1234);
+    GiftSortMessage sort;sort.set_message_type(3);sort.mutable_scene_insert_strategy()->add_gift_ids(4095);
+      auto unknown=observed_event("old-unknown","WebcastGiftSortMessage",sort.SerializeAsString(),1234);
+      unknown["_details"]["field_analysis"]={{"version",2},{"entries",json::array()}};
     deliver(store,"111",unknown);
     ChatMessage chat;chat.set_content("saved chat");auto known=observed_event("old-chat","WebcastChatMessage",chat.SerializeAsString(),1234);
     known["type"]="chat";known["user_id"]="9007199254740993";known["user_name"]="repaired name";known["user_level"]=42;known["content"]="repaired chat";deliver(store,"111",known);
     const auto before=store.snapshot("111"),stats=store.stats("111"),detail=store.message_detail("old-unknown");
     const auto preview=redecode_details(false);check(preview["updated"]==2 && preview["promoted"]==1,"Dry-run should identify saved schema upgrades");
     check(store.snapshot("111")==before && store.message_detail("old-unknown")==detail,"Dry-run must not modify records");
-    const auto applied=redecode_details(true);check(applied["failed"]==0 && applied["updated"]==2,"Apply must enrich both known and unknown saved payloads");
+      const auto applied=redecode_details(true);check(applied["failed"]==0 && applied["updated"]==2,"Apply must enrich both known and unknown saved payloads");
+      check(store.message_detail("old-unknown")["details"]["field_analysis"]["version"]==3 && store.message_detail("old-unknown")["event"]["parser_version"]==event_parser_version,"Version 2 details must upgrade alongside records without analysis");
     const auto after=store.snapshot("111");check(after["through_seq"]==before["through_seq"] && store.stats("111")==stats,"Upgrade must not replay events, cursors or business counters");
     check(after["events"].size()==1 && store.message_detail("old-unknown")["event"]["type"]=="gift_notice","Resolved configuration is enriched in storage without becoming an audience action");
     check(after["events"][0]["user_name"]=="repaired name" && after["events"][0]["user_level"]==42 && after["events"][0]["content"]=="repaired chat","Existing user and business repairs must survive detail upgrades");
     check(store.message_detail("old-unknown")["details"]["payload_base64"]==detail["details"]["payload_base64"],"Original payload must remain byte-identical");
     check(redecode_details(true)["updated"]==0,"Repeated detail upgrade must be idempotent");
+    RoomMessage roomNotice;roomNotice.set_content(" ");
+    auto* display=roomNotice.mutable_common()->mutable_display_text();display->set_default_pattern("大家在说 {0:string}");
+    auto* piece=display->add_pieces();piece->set_type(1);piece->set_string_value("好看");
+    auto oldNotice=observed_event("old-notice","WebcastRoomMessage",roomNotice.SerializeAsString(),1234);
+    decode_observed(oldNotice,roomNotice.SerializeAsString());oldNotice["content"]=" ";oldNotice["parser_version"]=5;
+    deliver(store,"111",oldNotice);
+    const auto noticeStats=store.stats("111"),noticeBefore=store.message_detail("old-notice"),noticeCursor=store.snapshot("111")["through_seq"];
+    check(redecode_details(false)["updated"]==1 && store.message_detail("old-notice")==noticeBefore,"Parser-only upgrades must be discovered without modifying data in dry-run");
+    check(redecode_details(true)["updated"]==1 && store.message_detail("old-notice")["event"]["content"]=="大家在说 好看","Saved blank notices must receive their rendered content");
+    check(store.snapshot("111")["events"].back()["content"]=="大家在说 好看","Historical notice repair must update the feed view too");
+    check(store.message_detail("old-notice")["details"]["payload_base64"]==noticeBefore["details"]["payload_base64"] && store.stats("111")==noticeStats && store.snapshot("111")["through_seq"]==noticeCursor,"Notice repair must preserve raw payload, counters and cursor");
+    check(redecode_details(true)["updated"]==0,"Notice repair must be idempotent");
+    FansclubMessage fans;fans.set_type(6);fans.mutable_user()->mutable_fansclub()->mutable_data()->set_level(8);
+    auto oldFans=observed_event("old-fans","WebcastFansclubMessage",fans.SerializeAsString(),1234);
+    decode_observed(oldFans,fans.SerializeAsString());oldFans["content"]="粉丝团事件";oldFans["parser_version"]=6;
+    deliver(store,"111",oldFans);
+    const auto fansStats=store.stats("111"),fansBefore=store.message_detail("old-fans");
+    check(redecode_details(false)["updated"]==1 && store.message_detail("old-fans")==fansBefore,"Fansclub summary repair must be read-only in preview");
+    check(redecode_details(true)["updated"]==1 && store.snapshot("111")["events"].back()["content"]=="粉丝团资料 · 当前等级 Lv8（具体动作未确认）","Historical generic fansclub events must gain known context");
+    check(store.stats("111")==fansStats && store.message_detail("old-fans")["details"]["payload_base64"]==fansBefore["details"]["payload_base64"],"Fansclub repair must preserve counters and source payload");
+    check(redecode_details(true)["updated"]==0,"Fansclub repair must be idempotent");
+    auto unrelated=observed_event("unchanged-v6-chat","WebcastChatMessage",chat.SerializeAsString(),1234);
+    decode_observed(unrelated,chat.SerializeAsString());unrelated["parser_version"]=6;deliver(store,"111",unrelated);
+    check(redecode_details(true)["updated"]==0,"Notification-only parser upgrades must not rewrite unrelated chat history");
     bool rejected=false;try{decode_saved_base64("AA==junk");}catch(...){rejected=true;}check(rejected,"Trailing base64 corruption must be rejected");
 }
 
@@ -524,6 +550,7 @@ void presentation_delivery_and_paging() {
     check(store.events("111",0).size()==raw.size()+5 && store.stats("111")["total"]==stats["total"].get<int>()+5,"Presentation never drops stored deliveries or their collection totals");
     for(const auto& method:{"WebcastRoomMessage","WebcastCommonTextMessage","WebcastNotifyMessage"}){
         auto event=gift(method,method,0);event["method"]=method;event["type"]=std::string(method)=="WebcastRoomMessage"?"room_notice":"notice";event["content"]="主播发布的重要通知";deliver(store,"111",event);
+        event["content"]=" \t\n";check(!feed_visible(event),"Whitespace-only notices must not enter feed or history");
     }
     auto system=gift("ended","ended",0);system["type"]="system";system["method"]="WebcastControlMessage";system["content"]="直播已结束";deliver(store,"111",system);
     check(store.snapshot("111")["events"].size()==7,"Actual room notices and end-of-live events remain visible");

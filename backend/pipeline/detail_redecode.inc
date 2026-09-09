@@ -23,7 +23,9 @@ static json redecode_details(bool apply) {
     json report={{"apply",apply},{"scanned",0},{"updated",0},{"failed",0},{"promoted",0},{"analyzed_entries",0},{"methods",json::object()}};
     // Materialize identifiers only, so writes do not invalidate an active scan.
     std::vector<std::string> ids;
-    {Statement q(raw,"SELECT d.event_id FROM event_details d JOIN events e ON e.event_id=d.event_id WHERE COALESCE(json_extract(d.body,'$.field_analysis.version'),0)<1 ORDER BY e.id");while(q.row())ids.push_back(q.str(0));}
+    // Parser-only changes in versions 6/7 affect notification summaries. Avoid
+    // rewriting unrelated chat/gift history merely to advance a version tag.
+    {Statement q(raw,"SELECT d.event_id FROM event_details d JOIN events e ON e.event_id=d.event_id WHERE COALESCE(json_extract(d.body,'$.field_analysis.version'),0)<? OR (COALESCE(json_extract(e.body,'$.parser_version'),0)<? AND json_extract(d.body,'$.method') IN ('WebcastRoomMessage','WebcastCommonTextMessage','WebcastNotifyMessage','WebcastFansclubMessage')) ORDER BY e.id");q.num(1,field_analysis_version).num(2,event_parser_version);while(q.row())ids.push_back(q.str(0));}
     for(const auto& id:ids) {
         report["scanned"]=report["scanned"].get<int>()+1;
         bool transaction=false;
@@ -36,11 +38,13 @@ static json redecode_details(bool apply) {
             auto candidate=observed_event(id,method,payload,old.value("timestamp",int64_t(0)));decode_observed(candidate,payload);
             if(!candidate["_details"].contains("field_analysis"))candidate["_details"]["field_analysis"]=field_analysis(nullptr,payload);
             detail.update(candidate["_details"]);
-            json patch={{"parse_status",candidate["parse_status"]},{"parser_version",3},{"has_details",true}};
+            json patch={{"parse_status",candidate["parse_status"]},{"parser_version",event_parser_version},{"has_details",true}};
             if(old.value("type","")=="unknown" && candidate["type"]!="unknown") {
                 patch["type"]=candidate["type"];patch["content"]=candidate["content"];
                 report["promoted"]=report["promoted"].get<int>()+1;
             }
+            if(old.value("type","")==candidate.value("type","") && notice_needs_text(method,old.value("content",""))
+                && !notice_needs_text(method,candidate.value("content","")))patch["content"]=candidate["content"];
             report["methods"][method]=report["methods"].value(method,0)+1;
             report["analyzed_entries"]=report["analyzed_entries"].get<int>()+int(detail["field_analysis"]["entries"].size());
             if(apply) {

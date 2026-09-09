@@ -57,6 +57,9 @@ static std::pair<std::string,std::string> monitor_category(const std::string& na
         {"LowPcuGuideMessage",{"protocol","低在线引导配置"}}, {"LowPcuGuideChatMessage",{"protocol","低在线聊天引导配置"}},
         {"CommonDotMessage",{"protocol","工具栏提示更新"}}, {"ProfitGameStatusMessage",{"game","游戏状态更新"}},
         {"ProfileViewMessage",{"notice","资料页提示"}}, {"RoomCommentTopicMessage",{"room_notice","直播间话题更新"}},
+        {"BattleStatusMessage",{"game","对战状态更新"}}, {"PrizeNoticeMessage",{"protocol","奖励通知配置"}},
+        {"VisibilityRangeChangeMessage",{"protocol","可见范围协议更新"}},
+        {"ChatLikeMessage",{"protocol","弹幕点赞计数更新"}}, {"RoomIndicatorMessage",{"protocol","直播间指标配置更新"}},
         {"EmojiChatMessage",{"emoji","表情消息"}}, {"FansclubMessage",{"fansclub","粉丝团事件"}},
         {"RoomStatsMessage",{"room_stats","房间统计"}}, {"RoomMessage",{"room_notice","房间通知"}},
         {"RoomRankMessage",{"room_rank","房间排行榜"}}, {"RanklistHourEntranceMessage",{"hour_rank","小时榜入口"}},
@@ -82,11 +85,57 @@ static std::string monitor_text(const std::string& value) {
     while(end<value.size() && end>0 && (uint8_t(value[end])&0xc0)==0x80)--end;
     return value.substr(0,end)+(end<value.size()?"…":"");
 }
+static bool blank_notice_text(const std::string& value) {
+    return value.find_first_not_of(" \t\r\n\f\v")==std::string::npos;
+}
+static bool notice_needs_text(const std::string& method,const std::string& content) {
+    if(method=="WebcastFansclubMessage")return blank_notice_text(content) || content=="粉丝团事件";
+    if(method!="WebcastRoomMessage" && method!="WebcastCommonTextMessage" && method!="WebcastNotifyMessage")return false;
+    return blank_notice_text(content) || content=="房间通知" || content=="公共文本" || content=="通知";
+}
+// Substitute only tokens from the original pattern. Viewer text is literal,
+// never another template, and referenced users are not the notification sender.
+static std::string notice_display_text(const Text& text) {
+    const auto& pattern=text.default_pattern();
+    if(pattern.size()>16384 || text.pieces_size()>256)return "";
+    auto piece_text=[](const TextPiece& piece)->std::string {
+        if(piece.type()==1)return piece.string_value();
+        if(piece.type()==11)return piece.uservalue().user().nickname();
+        if(piece.type()==12)return piece.giftvalue().nameref().defaultpattern();
+        if(piece.type()==14)return piece.patternrefvalue().defaultpattern();
+        if(piece.type()==15) {
+            const auto& alt=piece.imagevalue().image().content().alternative_text();
+            return alt.empty()?"[图片]":alt;
+        }
+        return "";
+    };
+    std::string output;
+    if(pattern.empty()) {
+        for(const auto& piece:text.pieces()) {
+            const auto value=piece_text(piece);
+            if(value.empty() || output.size()+value.size()>16384)return "";
+            output+=value;
+        }
+    } else for(size_t i=0;i<pattern.size();) {
+        if(pattern[i]!='{'){output+=pattern[i++];continue;}
+        const auto end=pattern.find('}',i+1);
+        if(end==std::string::npos || end-i>64)return "";
+        const auto token=pattern.substr(i+1,end-i-1);
+        const auto indexText=token.substr(0,token.find(':'));
+        if(indexText.empty() || indexText.size()>3 || indexText.find_first_not_of("0123456789")!=std::string::npos)return "";
+        const auto index=std::stoi(indexText);
+        if(index>=text.pieces_size())return "";
+        const auto value=piece_text(text.pieces(index));
+        if(value.empty() || output.size()+value.size()>16384)return "";
+        output+=value;i=end+1;
+    }
+    return blank_notice_text(output)?"":monitor_text(output);
+}
 static json observed_event(const std::string& key,const std::string& method,const std::string& payload,int64_t timestamp) {
     return {{"event_id",key},{"display_id",key},{"method",method},{"timestamp",timestamp},
         {"type","unknown"},{"content","待识别消息："+method},{"user_id",""},{"user_name","系统"},
         {"user_level",nullptr},{"fans_club",nullptr},{"gift_count",0},{"parse_status","unmapped"},
-        {"payload_bytes",payload.size()},{"has_details",true},{"parser_version",3},
+        {"payload_bytes",payload.size()},{"has_details",true},{"parser_version",event_parser_version},
         {"_details",{{"method",method},{"payload_base64",payload_base64(payload)},{"wire",wire_preview(payload)}}}};
 }
 static void decode_observed(json& event,const std::string& payload) {
@@ -98,10 +147,16 @@ static void decode_observed(json& event,const std::string& payload) {
     const auto* prototype=google::protobuf::MessageFactory::generated_factory()->GetPrototype(descriptor);
     if(!prototype)return;
     std::unique_ptr<google::protobuf::Message> decoded(prototype->New());
-    if(!decoded->ParseFromString(payload))throw std::runtime_error("invalid protobuf payload");
+    if(!decoded->ParseFromString(payload)) {
+        event["_details"]["field_analysis"]=field_analysis(nullptr,payload);
+        throw std::runtime_error("invalid protobuf payload");
+    }
     std::string output;google::protobuf::util::JsonPrintOptions options;options.preserve_proto_field_names=true;
     const auto status=google::protobuf::util::MessageToJsonString(*decoded,&output,options);
-    if(!status.ok())throw std::runtime_error("protobuf JSON conversion failed");
+    if(!status.ok()) {
+        event["_details"]["field_analysis"]=field_analysis(nullptr,payload);
+        throw std::runtime_error("protobuf JSON conversion failed");
+    }
     auto& details=event["_details"];details["schema"]=name;details["decoded"]=json::parse(output);details["field_analysis"]=field_analysis(decoded.get(),payload);
     event["parse_status"]=incomplete_schema(*decoded)?"partial":"decoded";
     auto category=monitor_category(name);event["type"]=category.first;event["content"]=category.second;
@@ -124,7 +179,16 @@ static void decode_observed(json& event,const std::string& payload) {
         const auto* field=descriptor->FindFieldByName(fieldName);
         if(field && !field->is_repeated() && field->type()==google::protobuf::FieldDescriptor::TYPE_STRING) {
             const auto text=reflection->GetString(*decoded,field);
-            if(!text.empty()){event["content"]=monitor_text(text);break;}
+            if(!blank_notice_text(text)){event["content"]=monitor_text(text);break;}
+        }
+    }
+    if(notice_needs_text(method,event.at("content").get<std::string>())) {
+        const auto* field=descriptor->FindFieldByName(name=="FansclubMessage"?"commonInfo":"common");
+        if(field && field->message_type()==Common::descriptor()) {
+            const auto common=decode<Common>(reflection->GetMessage(*decoded,field).SerializeAsString());
+            auto text=notice_display_text(common.display_text());
+            if(text.empty() && !blank_notice_text(common.describe()))text=monitor_text(common.describe());
+            if(!text.empty())event["content"]=text;
         }
     }
     if(name=="RoomStreamAdaptationMessage")event["content"]="直播流适配类型："+std::to_string(decode<RoomStreamAdaptationMessage>(payload).adaptation_type());
@@ -143,9 +207,31 @@ static void decode_observed(json& event,const std::string& payload) {
         auto title=game.game_title().size()<=16384 && shallow_json(game.game_title())?json::parse(game.game_title(),nullptr,false):json(nullptr);
         if(title.is_object() && title.contains("title") && title["title"].is_string())event["content"]=monitor_text(title["title"].get<std::string>());
     }
-    if(name=="GiftSortMessage" || name=="ResidentGuestMessage" || name=="LowPcuGuideMessage" || name=="LowPcuGuideChatMessage" || name=="CommonDotMessage" || name=="ProfitGameStatusMessage" || name=="ProfileViewMessage" || name=="RoomCommentTopicMessage") {
+    if(name=="ProfitGameStatusMessage" || name=="ProfileViewMessage" || name=="RoomCommentTopicMessage") {
         details["schema_evidence"]="参考协议与本机样本核对；仅确认字段结构，未确认的动作码及嵌套数据保留原值。";
         event["parse_status"]="partial";
     }
-    if(name=="FansclubMessage")event["action"]=decode<FansclubMessage>(payload).type();
+    if(name=="FansclubMessage") {
+        const auto fans=decode<FansclubMessage>(payload);event["action"]=fans.type();
+        if(notice_needs_text(method,event.at("content").get<std::string>())) {
+            // 1/2 are corroborated by the join/upgrade prose in captured frames.
+            // Other action codes have no verified meaning; a current level does
+            // not prove a level change, badge activation or membership purchase.
+            const auto& club=fans.user().fansclub().data();
+            const auto name=blank_notice_text(club.clubname())?std::string(""):"【"+monitor_text(club.clubname())+"】";
+            const auto level=club.has_level() && club.level()>=0?"Lv"+std::to_string(club.level()):std::string("");
+            std::string text;
+            if(fans.type()==1)text=name+"粉丝团升级"+(level.empty()?"":"至 "+level);
+            else if(fans.type()==2)text="加入"+name+"粉丝团"+(level.empty()?"":" · 当前等级 "+level);
+            else text=name+"粉丝团资料"+(level.empty()?"":" · 当前等级 "+level)+"（具体动作未确认）";
+            event["content"]=monitor_text(text);
+        }
+    }
+    if(name=="RoomRankMessage" || name=="GiftSortMessage" || name=="ResidentGuestMessage" || name=="LowPcuGuideMessage" || name=="LowPcuGuideChatMessage" || name=="CommonDotMessage" || name=="ChatLikeMessage" || name=="RoomIndicatorMessage") {
+        details["schema_evidence"]="字段名、类型、重复列表及映射已对照抖音 CDN live-schema-im.19dd06d0.js 和本机载荷。枚举码保留原值；榜单、引导与配置不归因于观众行为。";
+    }
+    if(name=="BattleStatusMessage" || name=="PrizeNoticeMessage" || name=="VisibilityRangeChangeMessage") {
+        details["schema_evidence"]="本机样本经 protoc --decode_raw 核对字段结构；编号字段、状态枚举及行为含义尚未确认。VisibilityRangeChange 仅观测到公共头。";
+        event["parse_status"]="partial";
+    }
 }

@@ -38,6 +38,12 @@ const event = overrides => ({
   ...overrides,
 });
 
+const {isFeedMessage} = loadTs('pipeline/messages.ts');
+for (const [type, method] of [['room_notice', 'WebcastRoomMessage'], ['notice', 'WebcastCommonTextMessage'], ['notice', 'WebcastNotifyMessage']]) {
+  assert.equal(isFeedMessage(event({type, method, content: ' \t\n'})), false, 'Whitespace-only notices must not render an empty feed card');
+  assert.equal(isFeedMessage(event({type, method, content: '测试用户等8人在说 哈哈哈'})), true, 'Rendered notification text must be visible');
+}
+
 const initial = mergeMessages([], [event({})], 'room-a');
 const updated = mergeMessages(initial, [event({seq: '3', event_id: 'event-3', gift_count: 3})], 'room-a');
 assert.equal(updated.length, 1, '同一连送应保留一行');

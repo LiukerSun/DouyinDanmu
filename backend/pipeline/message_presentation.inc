@@ -9,9 +9,9 @@ static bool feed_visible(const json& event) {
     const auto method=event.value("method","");
     const auto content=event.value("content","");
     if(type=="room_notice" && (method.empty() || method=="WebcastRoomMessage"))
-        return !content.empty() && content!="房间通知";
+        return content.find_first_not_of(" \t\r\n\f\v")!=std::string::npos && content!="房间通知";
     if(type=="notice" && (method.empty() || method=="WebcastCommonTextMessage" || method=="WebcastNotifyMessage"))
-        return !content.empty() && content!="公共文本" && content!="通知";
+        return content.find_first_not_of(" \t\r\n\f\v")!=std::string::npos && content!="公共文本" && content!="通知";
     return false;
 }
 

@@ -89,7 +89,7 @@ std::string gift_wire(const GiftOptions& options = {}) {
     }
     payload += number(29, 29) + number(30, 30) + number(33, 33) + number(34, 34) + number(36, 36);
     if (options.unknown_extensions)
-        for (unsigned field : {21, 24, 31, 37, 38, 39, 40, 41, 42}) payload += data(field, std::string(1, char(0xff)));
+        for (unsigned field : {24, 31, 37, 38, 40, 41, 42, 99}) payload += data(field, std::string(1, char(0xff)));
     return payload;
 }
 
@@ -245,10 +245,10 @@ void unknown_field_analysis() {
     check(decodedImage["url_list"].size()==2 && decodedImage["height"]=="20" && decodedImage["width"]=="40","Image schema must preserve repeated URLs and correct dimensions");
     check(decodedImage["content"]["alternative_text"]=="房管勋章","Badge alternative text must decode");
     const auto nested=data(1,"readable")+data(2,R"({"enabled":true})");
-    const auto event=one("WebcastChatMessage",data(2,user_wire()+data(61,nested))+data(3,"hello"));
+    const auto event=one("WebcastChatMessage",data(2,user_wire()+data(999,nested))+data(3,"hello"));
     const auto analysis=event["_details"]["field_analysis"];
     check(event["parse_status"]=="partial","Structural inspection must not promote unknown semantics to decoded");
-    bool found=false;for(const auto& field:analysis["entries"])if(field.value("path","")=="ChatMessage.user.#61") {
+    bool found=false;for(const auto& field:analysis["entries"])if(field.value("path","")=="ChatMessage.user.#999") {
         found=true;check(field["meaning_confirmed"]==false && field["candidate_only"]==true,"Nested wire must be labelled a candidate");
         check(field["protobuf_candidate"][0]["utf8_preview"]=="readable","Nested unknown UTF-8 must be visible");
         check(field["protobuf_candidate"][1]["json_value"]["enabled"]==true,"Nested JSON must expand");
@@ -261,7 +261,7 @@ void unknown_field_analysis() {
     auto recursive=number(1,1);for(int i=0;i<15;i++)recursive=data(1,recursive);
     check(one("WebcastFutureOpaqueMessage",recursive)["_details"]["field_analysis"]["truncated"]==true,"Recursive candidates must have a depth bound");
     const auto giftSort=one("WebcastGiftSortMessage",number(2,3)+data(4,data(2,varint(4095))));
-    check(giftSort["type"]=="gift_notice" && giftSort["parse_status"]=="partial","Binary scene config must not be decoded as UTF-8 or a gift transaction");
+    check(giftSort["type"]=="gift_notice" && giftSort["parse_status"]=="decoded" && giftSort["_details"]["decoded"]["scene_insert_strategy"]["gift_ids"][0]=="4095","Binary scene config must decode as packed gift IDs, not text or a gift transaction");
     const auto topics=one("WebcastRoomCommentTopicMessage",data(4,data(3,"话题正文")+data(5,"热聊中")));
     check(topics["content"]=="热聊中：话题正文","Verified topic fields must become readable content");
     const auto profile=one("WebcastProfileViewMessage",data(3,data(1,"profile_view_sub")+data(4,data(11,"亲密度"))));
@@ -281,7 +281,135 @@ void social_actions() {
     check(unknown["social_action"]=="unknown" && unknown["content"]=="其他互动（动作 2）","Unknown action must retain code rather than invent semantics");
 }
 
+void raw_numeric_analysis() {
+    const auto inspect=[](const std::string& bytes){return field_analysis(nullptr,bytes);};
+    const auto fixed=[](unsigned field,uint64_t value,int width){
+        auto bytes=varint((uint64_t(field)<<3)|(width==4?5:1));
+        for(int i=0;i<width;++i)bytes+=char(value>>(8*i));return bytes;
+    };
+    const auto fields=inspect(number(1,UINT64_MAX)+number(2,3)+fixed(3,0x3fc00000,4)+fixed(4,0xc004000000000000ULL,8))["entries"];
+    check(fields[0]["value"]=="18446744073709551615" && fields[0]["numeric_candidates"]["int64"]=="-1","Signed candidates must not replace raw precision");
+    check(fields[0]["numeric_candidates"]["sint64"]=="-9223372036854775808" && fields[1]["numeric_candidates"]["sint64"]=="-2","ZigZag must handle negative values and the signed minimum");
+    check(fields[2]["numeric_candidates"]["float"]==1.5 && fields[3]["numeric_candidates"]["double"]==-2.5,"Fixed-width bytes must offer IEEE float candidates");
+    check(inspect(fixed(1,0x7f800000,4))["entries"][0]["numeric_candidates"]["float"]=="Infinity","Nonfinite floats must remain explicit JSON strings");
+    const auto packed=inspect(data(1,varint(1)+varint(300)+varint(UINT64_MAX)))["entries"][0]["packed_candidates"][0];
+    check(packed["candidate_only"]==true && packed["count"]==3 && packed["values"][2]["value"]=="18446744073709551615","Packed varints must preserve order and exact values");
+    const auto packedFixed=inspect(data(1,std::string("\x00\x00\xc0\x3f\x00\x00\x00\xc0",8)))["entries"][0]["packed_candidates"];
+    bool fixedFound=false;for(const auto& candidate:packedFixed)if(candidate["encoding"]=="fixed32") {
+        fixedFound=true;check(candidate["values"][0]["interpretations"]["float"]==1.5 && candidate["values"][1]["interpretations"]["float"]==-2.0,"Packed fixed32 floats must use little endian order");
+    }
+    check(fixedFound,"Packed fixed32 should be offered for aligned binary data");
+    for(const auto& bad:std::vector<std::string>{std::string(1,char(0x80)),std::string(9,char(0xff))+char(2),std::string(10,char(0x80))+char(0)}) {
+        const auto analysis=inspect(data(1,bad));
+        for(const auto& candidate:analysis["entries"][0]["packed_candidates"])
+            check(candidate["encoding"]!="varint","Truncated or overflowing packed varints must not produce candidates");
+    }
+    check(!inspect(data(1,"hello"))["entries"][0].contains("packed_candidates"),"Readable text should not flood diagnostics with integer candidates");
+    std::string many;for(int i=0;i<12;++i)many+=data(1,std::string(600,'\0'));
+    const auto bounded=inspect(many);size_t values=0;
+    for(const auto& entry:bounded["entries"])for(const auto& candidate:entry["packed_candidates"])values+=candidate["values"].size();
+    check(bounded["truncated"]==true && values==512,"Packed previews must share a global value budget");
+    check(inspect(std::string(1,char(0xff)))["wire_valid"]==false && inspect("")["wire_valid"]==true,"Invalid wire must be distinguishable from a valid empty message");
+    const auto failed=parse(envelope("WebcastChatMessage",std::string(1,char(0xff))));
+    check(failed.first[0]["_details"]["field_analysis"]["wire_valid"]==false,"Schema failures must retain raw analysis");
+}
+
+void additional_observed_schemas() {
+    const auto battle=one("WebcastBattleStatusMessage",data(2,"90071992547409931")+data(3,"90071992547409932")+number(4,3)+number(6,300)+number(7,60)+data(8,"1700000000000")+data(9,"1700000300000"));
+    check(battle["parse_status"]=="partial" && battle["user_id"]=="" && battle["type"]=="game","Battle status must not invent a viewer action");
+    check(battle["_details"]["decoded"]["field_6"]=="300" && battle["_details"]["decoded"]["field_2"]=="90071992547409931","Battle wire fields should be visible with exact values");
+    const auto prize=one("WebcastPrizeNoticeMessage",number(2,7424)+number(6,3)+number(8,35));
+    check(prize["parse_status"]=="partial" && prize["_details"]["decoded"]["field_8"]=="35" && prize["user_id"]=="","Prize codes do not identify a winner");
+    const auto visibility=one("WebcastVisibilityRangeChangeMessage",data(1,data(1,"WebcastVisibilityRangeChangeMessage"))+number(9,17));
+    check(visibility["parse_status"]=="partial" && visibility["_details"]["field_analysis"]["entries"][0]["number"]==9,"Header-only schema must preserve future fields as unknown");
+    const auto sync=one("WebcastRoomDataSyncMessage",number(2,sender_id)+number(4,UINT64_MAX)+data(3,"InteractEffectSyncData")+data(5,number(1,1)));
+    check(sync["_details"]["decoded"]["roomID"]==std::to_string(sender_id) && sync["_details"]["decoded"]["version"]=="18446744073709551615","Room sync ID and version are wire varints, not wire strings");
+    check(sync["parse_status"]=="partial" && sync["_details"]["field_analysis"]["entries"].size()==1,"Room sync opaque payload must remain available after correcting known scalar types");
+}
+
+void named_semantic_fields() {
+    const auto badge=data(1,"https://example.test/badge.webp")+data(8,data(4,"等级勋章"));
+    const auto buff=number(1,88)+number(2,2)+number(3,1700000000000ULL)
+        +data(4,number(1,9007199254740993ULL)+number(2,128))+data(5,badge);
+    const auto user=user_wire(sender_id,32)+data(23,data(26,buff))
+        +data(32,number(2,1)+data(4,varint(1)+varint(128)))
+        +number(54,3)+data(61,badge)+data(61,badge)+number(66,1)
+        +data(68,"脱敏名称")+data(69,number(1,2))+data(73,"webcast-identity")
+        +data(78,data(1,number(1,9007199254740993ULL)+data(2,badge)));
+    const auto event=one("WebcastChatMessage",data(2,user)+data(3,"hello")
+        +data(9,number(2,9007199254740993ULL)+number(3,128)+number(4,10)+number(6,1)+number(12,1)));
+    const auto decoded=event["_details"]["decoded"],profile=decoded["user"];
+    check(event["parse_status"]=="decoded" && event["_details"]["field_analysis"]["entries"].empty(),"Supported user and public-area fields must be named, not merely candidates");
+    check(profile["badge_image_list_v2"].size()==2 && profile["badge_image_list_v2"][0]["content"]["alternative_text"]=="等级勋章","Repeated badge images and their labels must be decoded");
+    check(profile["user_attr"]["is_admin"]==true && profile["user_attr"]["admin_privileges"][1]==128,"Packed user privileges must decode through the named schema");
+    check(profile["PayGrade"]["buffInfo"]["stats_info"]["9007199254740993"]=="128","Buff map keys and values must retain 64-bit precision");
+    check(profile["public_area_badge_info"]["badge_info_map"].contains("9007199254740993"),"Public-area badge map must preserve numeric keys");
+    check(decoded["publicAreaCommon"]["user_consume_in_room"]=="9007199254740993" && decoded["publicAreaCommon"]["user_send_gift_cnt_in_room"]=="128","Public-area numeric fields must use varint wire types");
+    check(event["user_id"]==std::to_string(sender_id) && event["user_name"]=="测试用户" && event["user_level"]==32,"Webcast identity, masked name, and buff level must not overwrite account identity or wealth level");
+    const auto rank=one("WebcastRoomRankMessage",data(1,data(27,"test-room"))+data(3,data(1,user)+number(2,500)+number(3,1)));
+    check(rank["_details"]["decoded"]["audience_ranks"][0]["user"]["badge_image_list_v2"].size()==2 && rank["user_id"]=="","Additional ranked users must be decoded without becoming senders");
+    check(rank["parse_status"]=="decoded" && rank["_details"]["decoded"]["audience_ranks"][0]["score"]=="500" && rank["_details"]["decoded"]["audience_ranks"][0]["rank"]=="1","Ranking values must use the CDN's named score/rank definitions");
+    const auto like=one("WebcastLikeMessage",data(12,number(4,100)));
+    check(like["_details"]["decoded"]["public_area_common"]["individual_priority"]=="100","Like public-area information must no longer be dropped");
+    const auto gift=one("WebcastGiftMessage",gift_wire()+data(15,data(44,"触发词一")+data(44,"触发词二")
+        +data(59,number(1,10)+data(2,"十连送"))+data(74,badge))
+        +data(21,number(5,2)+number(12,3000)+number(17,sender_id)+number(18,3))+data(39,number(2,4)));
+    check(gift["_details"]["decoded"]["gift"]["trigger_words"].size()==2 && gift["_details"]["decoded"]["gift"]["group_info"][0]["group_text"]=="十连送","Gift triggers and group labels must be named fields");
+    check(gift["_details"]["decoded"]["tray_info"]["origin_gift_id"]==std::to_string(sender_id) && gift["_details"]["decoded"]["tray_info"]["duration"]=="3000","Tray IDs and duration must preserve varint precision");
+    check(gift["gift_count"]==one("WebcastGiftMessage",gift_wire())["gift_count"],"Display group options and tray fields must not change transaction quantity");
+    const auto malformed=parse(envelope("WebcastChatMessage",data(2,data(61,std::string(1,char(0xff))))));
+    check(malformed.first[0]["parse_status"]=="failed" && malformed.first[0]["_details"]["field_analysis"]["wire_valid"]==true,"Malformed typed badges must retain valid outer raw wire for diagnosis");
+}
+
+void cdn_named_protocol_fields() {
+    const auto image=data(1,"https://example.test/entry.webp")+data(8,data(4,"入场勋章"));
+    const auto member=one("WebcastMemberMessage",data(15,data(25,image)+data(25,image)));
+    check(member["parse_status"]=="decoded" && member["_details"]["decoded"]["enter_effect_config"]["badge_list"].size()==2,"Entry badge field 25 is a repeated Image, including nested Member EffectConfig");
+    const auto ranks=one("WebcastRoomRankMessage",data(3,data(1,user_wire())+number(2,100)+number(3,1))+data(3,data(1,user_wire(receiver_id))+number(2,80)+number(3,2)+number(5,20)));
+    check(ranks["_details"]["decoded"]["audience_ranks"].size()==2 && ranks["_details"]["decoded"]["audience_ranks"][1]["delta"]=="20","Audience ranks must repeat; a singular proto would silently discard users");
+    const auto guide=one("WebcastLowPcuGuideChatMessage",data(2,number(1,1)+data(2,number(1,2)+number(2,1234)+data(4,"挥手"))+data(2,data(4,"比心"))));
+    check(guide["parse_status"]=="decoded" && guide["_details"]["decoded"]["guide_chat"]["guide_chat_config"].size()==2 && guide["type"]=="protocol","Guidance options must decode without masquerading as viewer chat");
+    const auto sort=one("WebcastGiftSortMessage",number(2,3)+data(4,data(1,"anchor_exhibition")+data(2,varint(128)+varint(129))+data(10,data(1,"slice_id")+data(2,"test"))));
+    check(sort["parse_status"]=="decoded" && sort["_details"]["decoded"]["scene_insert_strategy"]["gift_ids"].size()==2 && sort["_details"]["decoded"]["scene_insert_strategy"]["event_track"]["slice_id"]=="test","Sort configuration must decode packed IDs and map metadata");
+    const auto dotValue=data(1,"toolbar")+data(2,data(1,"gift")+data(2,data(2,"item")+data(3,number(1,123)+number(3,2))));
+    const auto dots=one("WebcastCommonDotMessage",data(2,data(1,"panel-a")+data(2,dotValue))+data(2,data(1,"panel-b")+data(2,dotValue)));
+    check(dots["parse_status"]=="decoded" && dots["_details"]["decoded"]["panel_dots"].size()==2 && dots["_details"]["decoded"]["panel_dots"]["panel-a"]["item_dots"]["gift"]["dot"]["id"]=="123","Panel dots must preserve all entries and expand the nested dot structure");
+    const auto chatLike=one("WebcastChatLikeMessage",data(2,number(1,9007199254740993ULL)+data(2,number(1,4)+number(2,9007199254740994ULL))));
+    check(chatLike["parse_status"]=="decoded" && chatLike["_details"]["decoded"]["total_msg_data"]["9007199254740993"]["version"]=="9007199254740994","Chat like message references and versions must stay exact");
+    check(chatLike["type"]=="protocol" && !chatLike.contains("like_count") && chatLike["user_id"]=="","Aggregated chat likes must not become a room-like transaction or invent a sender");
+    const auto indicator=one("WebcastRoomIndicatorMessage",number(2,9)+number(3,3)+data(4,data(2,number(1,1)+data(3,"在线观众"))+data(2,number(2,100))));
+    check(indicator["parse_status"]=="decoded" && indicator["_details"]["decoded"]["biz_info"]["contents"].size()==2 && !indicator.contains("online_count"),"Indicator contents must decode without guessing a room metric from the business code");
+    check(one("WebcastChatLikeMessage",number(999,1))["parse_status"]=="partial","Unknown future fields must still prevent complete schema coverage");
+}
+
 void full_monitor_coverage() {
+    const auto fansUpdate=one("WebcastFansclubMessage",number(2,6)+data(4,user_wire(sender_id,std::nullopt,8,2)));
+    check(fansUpdate["content"]!="粉丝团事件" && fansUpdate["content"].get<std::string>().find("Lv8")!=std::string::npos,"Fans club updates without prose must expose known context instead of a generic event label");
+    check(fansUpdate["content"]=="【测试粉丝团】粉丝团资料 · 当前等级 Lv8（具体动作未确认）" && fansUpdate["action"]==6,"Unknown action 6 must not be guessed as a join, upgrade or badge activation");
+    check(one("WebcastFansclubMessage",number(2,7)+data(4,user_wire(sender_id,std::nullopt,1,1)))["content"]=="【测试粉丝团】粉丝团资料 · 当前等级 Lv1（具体动作未确认）","Action 7 must not be inferred from current membership");
+    check(one("WebcastFansclubMessage",number(2,999))["content"]=="粉丝团资料（具体动作未确认）","Unknown actions must not fabricate a level or membership");
+    check(one("WebcastFansclubMessage",number(2,1)+data(4,user_wire(sender_id,std::nullopt,7)))["content"]=="【测试粉丝团】粉丝团升级至 Lv7","Verified level-up action should show the reported level");
+    check(one("WebcastFansclubMessage",number(2,2)+data(4,user_wire(sender_id,std::nullopt,1,1)))["content"]=="加入【测试粉丝团】粉丝团 · 当前等级 Lv1","Verified join action should be explained");
+    check(one("WebcastFansclubMessage",number(2,1)+data(3,"原始升级文案"))["content"]=="原始升级文案","Explicit fan club prose must be retained");
+    const auto fansDisplay=data(2,"恭喜 {0:user} 加入【{1:string}】")+data(4,number(1,11)+data(21,data(1,user_wire())))+data(4,number(1,1)+data(11,"测试团"));
+    check(one("WebcastFansclubMessage",data(1,data(8,fansDisplay))+number(2,2)+data(3," "))["content"]=="恭喜 测试用户 加入【测试团】","Fansclub commonInfo must use display templates before action fallback");
+    check(one("WebcastFansclubMessage",data(1,data(7,"平台提供的粉丝团提示"))+number(2,6))["content"]=="平台提供的粉丝团提示","Fansclub common description takes precedence over an unknown action");
+    const auto display=data(2,"{0:user}等{1:string}人在说 {2:string}")
+        +data(4,number(1,11)+data(21,data(1,user_wire())))
+        +data(4,number(1,1)+data(11,"8"))
+        +data(4,number(1,1)+data(11,"哈哈哈"));
+    const auto richNotice=one("WebcastRoomMessage",data(1,data(8,display))+data(2," "));
+    check(richNotice["content"]=="测试用户等8人在说 哈哈哈","Whitespace room notice must render its display_text template and pieces");
+    check(richNotice["user_id"]=="","Users mentioned in a room notice must not become its sender");
+    check(richNotice["_details"]["decoded"]["content"]==" ","Rendered summary must preserve the decoded source verbatim");
+    check(one("WebcastCommonTextMessage",data(1,data(8,display)))["content"]==richNotice["content"],"Common text must use the same display template");
+    check(one("WebcastNotifyMessage",data(1,data(8,display))+data(4,"\t\n"))["content"]==richNotice["content"],"Notify whitespace must use its display template");
+    check(one("WebcastRoomMessage",data(1,data(8,display))+data(2,"已有正文"))["content"]=="已有正文","Explicit notice text must not be overwritten");
+    const auto literal=data(2,"{0:string} / {0:string}")+data(4,number(1,1)+data(11,"{9:user}"));
+    check(one("WebcastRoomMessage",data(1,data(8,literal)))["content"]=="{9:user} / {9:user}","Viewer text must not be recursively evaluated as a template");
+    const auto invalid=data(2,"{999999999999:user}");
+    check(one("WebcastRoomMessage",data(1,data(7,"备用通知正文")+data(8,invalid)))["content"]=="备用通知正文","Malformed templates must safely use the common description");
+    check(one("WebcastRoomMessage",data(1,data(8,invalid))+data(2," "))["content"]=="房间通知","Unresolvable templates must not expose empty or unresolved text");
     const auto notice=one("WebcastRoomMessage",data(2,"真实房间通知"));
     check(notice["content"]=="真实房间通知" && notice["type"]=="room_notice","Room notices must expose their text");
     check(notice["_details"]["payload_base64"]==payload_base64(data(2,"真实房间通知")),"Full raw payload must round-trip");
@@ -350,6 +478,10 @@ int main() {
         full_monitor_coverage();
         social_actions();
         unknown_field_analysis();
+        raw_numeric_analysis();
+        additional_observed_schemas();
+        named_semantic_fields();
+        cdn_named_protocol_fields();
 #endif
         std::cout << "event parser wire regression tests passed\n";
         return 0;

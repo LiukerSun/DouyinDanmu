@@ -57,8 +57,8 @@ export const audienceMessageTypes = new Set(['chat', 'gift', 'enter', 'like', 's
 export function isFeedMessage(event: PipelineEvent): boolean {
   if (event.parse_status === 'failed') return false
   if (audienceMessageTypes.has(event.type)) return true
-  if (event.type === 'room_notice' && (!event.method || event.method === 'WebcastRoomMessage')) return !!event.content && event.content !== '房间通知'
-  if (event.type === 'notice' && (!event.method || ['WebcastCommonTextMessage', 'WebcastNotifyMessage'].includes(event.method))) return !!event.content && !['公共文本', '通知'].includes(event.content)
+  if (event.type === 'room_notice' && (!event.method || event.method === 'WebcastRoomMessage')) return !!event.content?.trim() && event.content !== '房间通知'
+  if (event.type === 'notice' && (!event.method || ['WebcastCommonTextMessage', 'WebcastNotifyMessage'].includes(event.method))) return !!event.content?.trim() && !['公共文本', '通知'].includes(event.content)
   return false
 }
 export type RoomStateEvent = Pick<PipelineEvent, 'seq' | 'live_id' | 'type' | 'method' | 'online_count' | 'received_at_ms'>

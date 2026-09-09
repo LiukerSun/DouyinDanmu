@@ -125,6 +125,7 @@ message GiftMessage {
   PublicAreaCommon public_area_common = 18; // 公共区域信息
   Text tray_display_text = 19;     // 托盘显示文本
   uint64 banned_display_effects = 20; // 禁止显示效果
+  GiftTrayInfo tray_info = 21;
   // Unmapped extensions are preserved as unknown fields.
   bool display_for_self = 25;      // 是否仅自己显示
   string interact_gift_info = 26;   // 交互礼物信息
@@ -137,6 +138,8 @@ message GiftMessage {
   uint64 force_display_effects = 34;// 强制显示效果
   string trace_id = 35;            // 追踪ID
   uint64 effect_display_ts = 36;  // 效果显示时间戳
+  RoomHotInfo room_hot_info = 39;
+  bool use_room_message = 43;
 }
 message SeriesPlayGift {
   GiftStruct gift_struct = 1;               // 礼物结构
@@ -181,23 +184,25 @@ message GiftTrayInfo {
   Image tray_base_img = 2;                 // 托盘基础图像
   Image tray_head_img = 3;                 // 托盘头部图像
   Image tray_right_img = 4;                // 托盘右侧图像
-  string tray_level = 5;                   // 托盘等级
+  int64 tray_level = 5;                   // 托盘等级
   Image tray_dynamic_img = 6;              // 托盘动态图像
   string tray_schema_url = 7;              // 托盘模式URL
   int32 tray_type = 8;                     // 托盘类型
   Image tray_base_img_v2 = 9;              // 托盘基础图像v2
   Image tray_right_img_v2 = 10;             // 托盘右侧图像v2
   bool use_high_layer = 11;                // 是否使用高層
-  string duration = 12;                    // 持续时间
+  int64 duration = 12;                    // 持续时间
   string toast = 13;                        // 弹出提示
   int32 tray_slide_rate = 14;               // 托盘滑动速率
   TrayPreEffect tray_pre_effect = 15;      // 托盘前效果
   TrayPostEffect tray_post_effect = 16;     // 托盘后效果
-  string origin_gift_id = 17;              // 原始礼物ID
-  string buff_level = 18;                   // 增益等级
+  int64 origin_gift_id = 17;              // 原始礼物ID
+  int64 buff_level = 18;                   // 增益等级
   string toolbar_card_name = 19;            // 工具栏卡片名称
   Image tray_base_webp_img = 20;           // 托盘基础Webp图像
   int32 tray_group_mode = 21;              // 托盘组模式
+  int32 expensive_tray_group_num = 22;
+  int32 regular_tray_group_num = 23;
 }
 // TrayPostEffect 主消息
 message TrayPostEffect {
@@ -211,10 +216,10 @@ message TrayPostEffect {
 }
 message TrayPreEffect {
   Image pre_effect_img = 1;          // 预效果图像
-  string tray_start_time = 2;       // 托盘开始时间（int64字符串表示）
+  int64 tray_start_time = 2;       // 托盘开始时间
   Image tray_ripple = 3;             // 托盘涟漪效果图像
   string pre_schema = 4;             // 预效果模式
-  string pre_duration = 5;           // 预效果持续时间（int64字符串表示）
+  int64 pre_duration = 5;           // 预效果持续时间
   int32 pre_effect_source = 6;       // 预效果来源
   string extra = 7;                  // 额外信息
 }
@@ -224,7 +229,7 @@ message GiftStruct {
   bool notify = 3;
   uint64 duration = 4;
   uint64 id = 5;
-  //  GiftStructFansClubInfo fansclubInfo = 6;
+  GiftStructFansClubInfo fansclubInfo = 6;
   bool forLinkmic = 7;
   bool doodle = 8;
   bool forFansclub = 9;
@@ -238,11 +243,40 @@ message GiftStruct {
   string region = 17;
   string manual = 18;
   bool forCustom = 19;
-  //  specialEffectsMap = 20;
+  map<string, int64> special_effects = 20;
   Image icon = 21;
   uint32 actionType = 22;
-  // fixme 后面的就不写了还有几十个属性
+  int32 item_type = 28;
+  int64 app_id = 38;
+  int64 gift_scene = 42;
+  repeated string trigger_words = 44;
+  int32 after_send_action = 48;
+  string banner_scheme_url = 52;
+  int64 req_extra_type = 54;
+  repeated int64 asset_ids = 55;
+  GiftPreviewInfo gift_preview_info = 56;
+  GiftTip gift_tip = 57;
+  repeated GiftGroupInfo group_info = 59;
+  bool disable_wish_list = 63;
+  Image webp_image = 74;
+}
 
+message GiftTip {
+  Text display_text = 1;
+  string background_color = 2;
+  Image prefix_image = 3;
+  int64 remaining_duration = 4;
+  Text remaining_duration_suffix_text = 5;
+  int64 countdown_deadline_time = 6;
+}
+message GiftGroupInfo { int32 group_count = 1; string group_text = 2; }
+message GiftStructFansClubInfo { int32 min_level = 1; int32 insert_pos = 2; }
+message GiftPreviewInfo {
+  int64 lock_status = 1;
+  bool client_block_use_scheme_url = 2;
+  string block_scheme_url = 3;
+  bool client_check_left_diamond = 4;
+  string block_toast = 5;
 }
 
 message GiftIMPriority {
@@ -328,6 +362,7 @@ message MemberMessage {
         int64 alignment_offset = 22;                 // 对齐偏移
         string effect_scene = 23;                    // 效果场景
         map<string, TextPiece> piece_values = 24; // 片段值
+        repeated Image badge_list = 25;
     }
 
     // PicoEffectConfig 子消息
@@ -347,18 +382,26 @@ message MemberMessage {
 
 message PublicAreaCommon {
   Image user_label = 1;
-  string user_consume_in_room = 2;
-  string user_send_gift_cnt_in_room = 3;
-  string individual_priority = 4;
-  string support_pin = 6;
+  int64 user_consume_in_room = 2;
+  int64 user_send_gift_cnt_in_room = 3;
+  int64 individual_priority = 4;
+  int64 support_pin = 6;
   SuffixText suffix_text = 7;
   int32 im_action = 8;
   bool forbidden_profile = 9;
   ChatReplyRespInfo reply_resp = 10;
-  string is_featured = 12;
+  int64 is_featured = 12;
   bool need_filter_display = 13;
   map<string, string> individual_strategy_result = 5;
   map<string, string> tracking_params = 11;
+  bool show_in_danmaku = 18;
+  bool is_like_comment = 19;
+  bool batch_refresh = 20;
+  bool is_ai_msg = 21;
+  bool should_log_light_interact_mob = 22;
+  map<string, string> light_interact_mob_params = 23;
+  int32 tail_interact_type = 24;
+  string default_click_schema_url = 25;
 }
 message SuffixText{
   uint64 biz_type =1;
@@ -394,6 +437,9 @@ message EffectConfig {
   string dressId = 20;
   uint64 alignment = 21;
   uint64 alignmentOffset = 22;
+  string effect_scene = 23;
+  map<string, TextPiece> piece_values = 24;
+  repeated Image badge_list = 25;
 }
 
 message Text {
@@ -475,6 +521,7 @@ message LikeMessage {
   uint64 linkmicGuestUid = 9;
   string scene = 10;
   PicoDisplayInfo picoDisplayInfo = 11;
+  PublicAreaCommon public_area_common = 12;
 }
 
 message SocialMessage {
@@ -576,6 +623,7 @@ message Common {
     int64 diff_sei2abs_second = 22;      // SEI 到绝对时间差
     int64 anchor_fold_duration = 23;     // 主播折叠持续时间
     int64 app_id = 24;                   // 应用 ID
+    string room_id_str = 27;
 }
 // RegionRestriction 消息定义
 message RegionRestriction {
@@ -4534,6 +4582,8 @@ message Image {
     string open_web_url = 7;
     ImageContent content = 8;
     bool is_animated = 9;
+    NinePatchSetting flex_setting_list = 10;
+    NinePatchSetting text_setting_list = 11;
 }
 message ImageContent {
     string name = 1;
@@ -4887,13 +4937,28 @@ message User {
   FollowInfo FollowInfo = 22;
   PayGrade PayGrade = 23;
   FansClub FansClub = 24;
-  //  Border Border = 25;
+  Border Border = 25;
   string SpecialId = 26;
   Image AvatarBorder = 27;
   Image Medal = 28;
   repeated Image RealTimeIconsList = 29;
+  repeated Image new_real_time_icons = 30;
+  UserAttr user_attr = 32;
+  int32 link_mic_stats = 37;
   string displayId = 38;
   string secUid = 46;
+  int32 authorization_info = 54;
+  int32 adversary_authorization_info = 55;
+  repeated Image badge_image_list_v2 = 61;
+  string location_city = 63;
+  FansGroupInfo fans_group_info = 64;
+  int32 mystery_man = 66; // Preserve enum code; do not infer user identity.
+  string desensitized_nickname = 68;
+  JAccreditInfo j_accredit_info = 69;
+  Subscribe subscribe = 70;
+  string webcast_uid = 73; // Distinct from id/idStr; never substitute for UID.
+  PublicAreaBadgeInfo public_area_badge_info = 78;
+  int32 webcast_private = 84;
   uint64 fanTicketCount = 1022;
   string idStr = 1028;
   uint32 ageRange = 1045;
@@ -4951,11 +5016,51 @@ message UserBadge {
 }
 
 message GradeBuffInfo {
+  int64 buff_level = 1;
+  int32 status = 2;
+  int64 end_time = 3;
+  map<int64, int64> stats_info = 4;
+  Image buff_badge = 5;
 }
 
 message Border{
-
+  Image icon = 1;
+  int64 level = 2;
+  Image thumb_icon = 3;
+  string dress_id = 4;
 }
+
+// Named structures cross-checked with scx's User schema and f2's descriptor.
+// Enum codes and platform-specific identity strings retain their raw values.
+message UserAttr {
+  bool is_muted = 1;
+  bool is_admin = 2;
+  bool is_super_admin = 3;
+  repeated int32 admin_privileges = 4;
+}
+message JAccreditInfo {
+  int32 basic = 1;
+  int32 advance = 2;
+  int32 content = 3;
+  int32 live = 4;
+}
+message PublicAreaBadgeInfo {
+  map<int64, Image> badge_info_map = 1;
+  repeated string badge_list = 2;
+  repeated WebcastDslBadgeList webcast_dsl_badge_list = 3;
+}
+message WebcastDslBadgeList {
+  repeated string badge_list = 1;
+  DslRule target_dsl_rule = 2;
+  DslRule filter_dsl_rule = 3;
+}
+message DslRule {
+  repeated string app_id = 1;
+  repeated string version_code = 2;
+  map<string, string> ab_params = 3;
+}
+message FansGroupInfo { string list_fans_group_url = 1; }
+message Subscribe { bool is_member = 1; }
 
 message GradeIcon{
   Image icon = 1;
@@ -5109,6 +5214,7 @@ message FansclubMessage {
   int32 type = 2;
   string content = 3;
   User user = 4;
+  PublicAreaCommon public_area_common = 6;
 }
 
 // from https://github.com/scx567888/live-room-watcher/blob/master/src/main/proto/douyin_hack/webcast/im/RoomRankMessage.proto
@@ -5116,12 +5222,27 @@ message FansclubMessage {
 message RoomRankMessage {
   Common common = 1;
   repeated RoomRank ranksList = 2;
+  // CDN decoder uses mode 3 (repeated), despite a community proto omitting it.
+  repeated AudienceRank audience_ranks = 3;
 
   message RoomRank{
     User user = 1;
     string scoreStr = 2;
     bool profileHidden = 3;
   }
+}
+message AudienceRank {
+  User user = 1;
+  int64 score = 2;
+  int64 rank = 3;
+  string gap_description = 4;
+  int64 delta = 5;
+  bool first_gift = 6;
+  bool is_hidden = 7;
+  string score_description = 8;
+  string exactly_score = 9;
+  string app_name = 11;
+  Image bg_image = 12;
 }
 // from https://github.com/scx567888/live-room-watcher/blob/master/src/main/proto/douyin_hack/webcast/im/RoomMsgTypeEnum.proto
 enum RoomMsgTypeEnum{
@@ -5142,6 +5263,7 @@ message RoomMessage{
     RoomMsgTypeEnum roommessagetype = 4;
     bool systemTopMsg = 5;
     bool forcedGuarantee = 6;
+    PublicAreaCommon public_area_common = 7;
     string bizScene = 20;
     map<string, string> buriedPointMap = 30;
 }
@@ -5213,14 +5335,14 @@ message RoomDataSyncMessage {
   // common 字段，引用 Common 消息类型
   Common common = 1;
 
-  // roomID 字段，整型字符串（int64String）
-  string roomID = 2;
+  // Wire varint; JSON renders uint64 as a decimal string, not wire string.
+  uint64 roomID = 2;
 
   // syncKey 字段，字符串类型
   string syncKey = 3;
 
-  // version 字段，整型字符串（int64String）
-  string version = 4;
+  // Local raw samples confirm wire type 0 for both fields 2 and 4.
+  uint64 version = 4;
 
   // payload 字段，字节类型（bytes）
   bytes payload = 5;
@@ -6612,28 +6734,65 @@ message HotAtmosphere {
 // Additional message schemas; unresolved payloads remain opaque bytes.
 message GiftSortMessage {
     Common common = 1;
-    uint32 sort_type = 2;
-    bytes scene_config = 4; // Opaque protobuf payload.
+    int32 message_type = 2;
+    int64 min_consume_level = 3;
+    GiftSortStrategy scene_insert_strategy = 4;
+    map<int32, GiftStruct> gift_details = 5;
+}
+message GiftSortStrategy {
+    string scene = 1;
+    repeated int64 gift_ids = 2;
+    repeated int64 tag_ids = 3;
+    int64 start_time = 4;
+    int64 end_time = 5;
+    string extra = 6;
+    int32 strategy_type = 7;
+    int32 update_type = 8;
+    repeated int64 effected_gift_ids = 9;
+    map<string, string> event_track = 10;
 }
 message ResidentGuestMessage {
     Common common = 1;
     uint32 type = 2; // Enum semantics remain unknown.
+    ResidentGuestAllowContent guest_allow_content = 100;
+    ResidentGuestAllowContent linkmic_room_allow_content = 101;
 }
+message ResidentGuestAllowContent { bool allow = 1; }
 message LowPcuGuideMessage {
     Common common = 1;
-    bytes guide_config = 2;
+    LowPcuGuideData guide_config = 2;
+}
+message LowPcuGuideData {
+    string guide_text = 1;
+    int64 status = 2;
+    bool enable_backup = 3;
+    int64 delay_time = 4;
 }
 message LowPcuGuideChatMessage {
     Common common = 1;
-    bytes guide_chat = 2;
+    LowPcuGuideChatData guide_chat = 2;
+}
+message LowPcuGuideChatData { int64 status = 1; repeated GuideChatConf guide_chat_config = 2; }
+message GuideChatConf {
+    int64 type = 1;
+    int64 image_id = 2;
+    string image_id_str = 3;
+    string image_text = 4;
+    Image emoji = 5;
 }
 message CommonDotMessage {
     Common common = 1;
-    ObservedCommonDot detail = 2;
+    map<string, PanelDotInfo> panel_dots = 2;
 }
-message ObservedCommonDot {
-    string key = 1;
-    bytes value = 2;
+message PanelDotInfo { string show_path = 1; map<string, ItemDotInfo> item_dots = 2; }
+message ItemDotInfo { string show_path = 1; string show_item_id = 2; CommonDot dot = 3; }
+message CommonDot {
+    int64 id = 1;
+    int64 priority = 2;
+    int32 style = 3;
+    int32 appear_mode = 4;
+    int32 disappear_mode = 5;
+    map<string, string> extra = 99;
 }
 message ProfitGameStatusMessage {
     Common common = 1;
@@ -6656,3 +6815,41 @@ message ObservedRoomTopic {
     string content = 3;
     string label = 5;
 }
+
+// 2026-09-09: decode_raw + local samples establish the wire layout only.
+// Reference labels for IDs/times/durations are not sufficiently confirmed;
+// keep their field numbers and do not attribute these events to a viewer.
+message BattleStatusMessage {
+    Common common = 1;
+    string field_2 = 2;
+    string field_3 = 3;
+    uint32 status = 4; // Enum meaning remains unconfirmed.
+    uint64 field_6 = 6;
+    uint64 field_7 = 7;
+    string field_8 = 8;
+    string field_9 = 9;
+}
+message PrizeNoticeMessage {
+    Common common = 1;
+    uint64 field_2 = 2;
+    uint64 field_6 = 6;
+    uint64 field_8 = 8;
+}
+// Only Common has been observed. Never mark this schema complete.
+message VisibilityRangeChangeMessage { Common common = 1; }
+
+// Additional methods observed in archived raw frames, mapped against CDN JS.
+message ChatLikeMessage { Common common = 1; map<int64, ChatLikeCount> total_msg_data = 2; }
+message ChatLikeCount { int64 count = 1; int64 version = 2; }
+message RoomIndicatorMessage { Common common = 1; int64 biz_type = 2; int64 status = 3; CommonBizInfo biz_info = 4; }
+message CommonBizInfo { string jump_schema = 1; repeated BizContent contents = 2; string extra = 3; }
+message BizContent {
+    int32 content_type = 1;
+    int64 number = 2;
+    string text_content = 3;
+    Image image_content = 4;
+    IndicatorHotText hot_text_content = 5;
+    int64 time_stamp = 6;
+    string end_text = 7;
+}
+message IndicatorHotText { int64 number = 1; string text_content = 2; }

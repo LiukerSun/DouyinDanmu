@@ -235,7 +235,7 @@ message GiftStruct {
   bool forFansclub = 9;
   bool combo = 10;
   uint32 type = 11;
-  uint32 diamondCount = 12;
+  optional uint32 diamondCount = 12;
   bool isDisplayedOnPanel = 13;
   uint64 primaryEffectId = 14;
   Image giftLabelIcon = 15;

@@ -1,8 +1,11 @@
     json search_messages(const MessageSearch& query) {
         query.validate();
+        if(query.as_of_seq>=0 && !query.deliveries)throw std::invalid_argument("统计快照明细请使用 view=events");
         std::lock_guard<std::mutex> guard(mutex);
         const std::string source=query.deliveries?"(SELECT live_id,id AS last_seq,body FROM events)":"message_views";
-        std::string where=" FROM "+source+" v JOIN rooms r ON r.live_id=v.live_id WHERE r.source='douyin' AND feed_visible(v.body)";
+        std::string where=" FROM "+source+" v JOIN rooms r ON r.live_id=v.live_id";
+        if(query.deliveries)where+=" LEFT JOIN analytics_events a ON a.seq=v.last_seq";
+        where+=" WHERE r.source='douyin' AND feed_visible(v.body)";
         std::vector<json> values;
         auto text_filter=[&](const std::string& clause,const std::string& value){if(!value.empty()){where+=clause;values.push_back(value);}};
         text_filter(" AND v.live_id=?",query.room);
@@ -11,6 +14,10 @@
         text_filter(" AND json_extract(v.body,'$.method')=?",query.method);
         text_filter(" AND COALESCE(json_extract(v.body,'$.parse_status'),'legacy')=?",query.parse_status);
         text_filter(" AND CAST(json_extract(v.body,'$.user_id') AS TEXT)=?",query.user);
+        const std::string event_time="COALESCE(NULLIF(json_extract(v.body,'$.timestamp'),0),json_extract(v.body,'$.received_at_ms'),json_extract(v.body,'$.persisted_at_ms'),0)";
+        if(query.from_ms>=0){where+=" AND "+event_time+">=?";values.push_back(query.from_ms);}
+        if(query.to_ms>=0){where+=" AND "+event_time+"<?";values.push_back(query.to_ms);}
+        if(query.as_of_seq>=0){where+=" AND v.last_seq<=?";values.push_back(query.as_of_seq);}
         text_filter(" AND instr(lower(COALESCE(json_extract(v.body,'$.content'),'') || ' ' || CASE WHEN json_extract(v.body,'$.type')='social' THEN CASE WHEN json_extract(v.body,'$.social_action')='follow' OR (json_extract(v.body,'$.social_action') IS NULL AND CAST(json_extract(v.body,'$.action') AS TEXT)='1') THEN '关注了主播' WHEN json_extract(v.body,'$.social_action')='share' THEN '分享了直播间' ELSE '其他互动' END ELSE '' END || ' ' || COALESCE(json_extract(v.body,'$.user_name'),'') || ' ' || COALESCE(json_extract(v.body,'$.user_id'),'') || ' ' || COALESCE(json_extract(v.body,'$.method'),'')),lower(?))>0",query.keyword);
         auto level_filter=[&](const std::string& field,int64_t low,int64_t high,bool unknown){
             const auto value="json_extract(v.body,'$."+field+"')";
@@ -24,9 +31,18 @@
         Statement count(db,("SELECT COUNT(*)"+where).c_str());bind(count);count.row();const auto total=count.number(0);
         std::string page=where;
         if(query.before>0)page+=" AND v.last_seq<?";
-        Statement rows(db,("SELECT v.last_seq,v.body"+page+" ORDER BY v.last_seq DESC LIMIT ?").c_str());
+        Statement rows(db,("SELECT v.last_seq,v.body"+std::string(query.deliveries?",a.gift_quantity,a.gift_unit_price":"")+page+" ORDER BY v.last_seq DESC LIMIT ?").c_str());
         int i=bind(rows);if(query.before>0)rows.num(i++,query.before);rows.num(i,query.limit+1);
         json events=json::array();bool more=false;
-        while(rows.row()) {if(events.size()==size_t(query.limit)){more=true;break;}auto event=json::parse(rows.str(1));event["seq"]=std::to_string(rows.number(0));events.push_back(event);}
+        while(rows.row()) {
+            if(events.size()==size_t(query.limit)){more=true;break;}
+            auto event=json::parse(rows.str(1));event["seq"]=std::to_string(rows.number(0));
+            if(query.deliveries && event.value("type","")=="gift" && !rows.str(2).empty()) {
+                const bool known=!rows.str(3).empty();
+                boost::multiprecision::cpp_int value=rows.number(2);value*=rows.number(3);
+                event["gift_statistics"]={{"quantity_delta",rows.str(2)},{"unit_price",known?json(rows.number(3)):json(nullptr)},{"value_delta",known?json(value.str()):json(nullptr)}};
+            }
+            events.push_back(event);
+        }
         return {{"events",events},{"total",total},{"next_before",more?events.back().at("seq"):json(nullptr)}};
     }

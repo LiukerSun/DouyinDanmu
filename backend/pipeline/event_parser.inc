@@ -47,6 +47,8 @@ static void gift_fields(json& e, const GiftMessage& gift, const std::string& roo
     const auto name=gift.gift().name().empty()?"礼物 "+gift_id:gift.gift().name();
     e["type"]="gift"; e["content"]=name; e["gift_name"]=name;
     e["gift_count"]=int64_t(count);
+    // Presence matters: an omitted price is unknown, not a free gift.
+    e["gift_unit_price"]=gift.gift().has_diamondcount()?json(gift.gift().diamondcount()):json(nullptr);
     e["gift_combo"]=gift.gift().combo();
     e["gift_final"]=!gift.gift().combo() || gift.repeat_end()==1;
     e["gift_id"]=gift_id; e["group_id"]=group_id; e["recipient_id"]=recipient;

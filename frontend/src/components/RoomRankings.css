@@ -1,0 +1,54 @@
+.room-content-tabs { flex: none; display: flex; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--studio-line); }
+.console-app .room-content-tabs .is-active, .console-app .ranking-kind .is-active { background: #eeeafa; color: #5547b6; }
+.room-rankings { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.ranking-toolbar { padding: 16px 18px 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.ranking-kind, .ranking-options { display: flex; align-items: center; gap: 8px; }
+.ranking-options { flex-wrap: wrap; }
+.ranking-options .studio-select { width: 170px; }
+.ranking-context { display: flex; justify-content: space-between; gap: 12px; padding: 0 18px 14px; color: var(--studio-muted); font-size: 12px; }
+.ranking-context strong { color: var(--studio-ink); font-weight: 550; }
+.ranking-note { margin: 0 18px 12px; color: #81738b; font-size: 12px; line-height: 1.7; }
+.ranking-table-scroll { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--studio-line); }
+.ranking-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.ranking-table thead { position: sticky; top: 0; z-index: 1; background: #f8f7fc; }
+.ranking-table th, .ranking-table td { padding: 12px 18px; border-bottom: 1px solid #eeedf5; vertical-align: middle; }
+.ranking-table thead th { font-size: 12px; color: #817a95; font-weight: 500; white-space: nowrap; }
+.ranking-table tbody tr:hover { background: #faf9fe; }
+.ranking-table th:first-child, .ranking-table td:first-child { width: 64px; }
+.ranking-place { display: inline-grid; place-items: center; min-width: 26px; height: 28px; color: #89839c; font-variant-numeric: tabular-nums; }
+.ranking-place-leading { background: #eeebfb; color: #6155d9; border-radius: 6px; font-weight: 650; }
+.ranking-user { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 160px; }
+.console-app .ranking-user-name { padding: 0; min-height: 24px; height: auto; color: #3e375d; font-weight: 550; text-align: left; justify-content: flex-start; max-width: 280px; overflow-wrap: anywhere; }
+.ranking-user > span { font-size: 11px; font-weight: 400; color: #888197; overflow-wrap: anywhere; }
+.ranking-user small { display: inline-block; margin-left: 8px; color: #766396; }
+.ranking-table .ranking-numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ranking-numeric strong { font-size: 15px; font-weight: 600; }
+.ranking-incomplete { display: block; margin-top: 4px; font-size: 11px; color: #a16d28; }
+.ranking-last-seen { white-space: nowrap; color: #888197; font-size: 12px; }
+.ranking-table td:last-child { text-align: right; white-space: nowrap; }
+.ranking-pagination { display: flex; justify-content: space-between; align-items: center; flex: none; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--studio-line); color: #888197; font-size: 12px; }
+.ranking-pagination > div { display: flex; gap: 8px; }
+.ranking-empty { min-height: 220px; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 26px; color: #888197; text-align: center; }
+.ranking-empty > .anticon { color: #a69bcf; font-size: 28px; }
+.ranking-empty strong { color: #625974; font-weight: 550; }
+.ranking-empty p { max-width: 380px; line-height: 1.8; font-size: 12px; }
+.ranking-history-heading { flex: none; display: flex; gap: 18px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--studio-line); }
+.ranking-history-heading > div { min-width: 0; }
+.ranking-history-heading strong { color: #4b405e; }
+.ranking-history-heading span { display: inline-block; margin-left: 10px; font-size: 11px; color: #888197; overflow-wrap: anywhere; }
+.ranking-history-heading p { font-size: 12px; margin-top: 5px; color: #888197; }
+.ranking-history-list { min-height: 0; }
+@media (max-width: 760px) {
+  .room-detail-view .conversation-panel.has-room-rankings { height: auto; min-height: calc(100dvh - 170px); }
+  .has-room-rankings > .panel-heading, .has-room-rankings .room-live-metrics { display: none; }
+  .has-room-rankings .room-rankings { flex: none; }
+  .has-room-rankings .ranking-table-scroll, .has-room-rankings .ranking-history-list { flex: none; min-height: 260px; max-height: 420px; }
+  .ranking-toolbar, .ranking-pagination, .ranking-history-heading { padding: 12px; }
+  .ranking-context { padding-inline: 12px; flex-wrap: wrap; }
+  .ranking-options { width: 100%; gap: 6px; }
+  .ranking-options .studio-select { flex: 1 1 140px; width: auto; }
+  .ranking-table { min-width: 610px; }
+  .ranking-table th, .ranking-table td { padding: 10px 12px; }
+  .ranking-pagination { flex-wrap: wrap; }
+  .ranking-history-heading { align-items: flex-start; flex-wrap: wrap; }
+}

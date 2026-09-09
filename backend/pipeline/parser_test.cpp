@@ -130,6 +130,8 @@ json one(const std::string& method, const std::string& payload,
 }
 
 void gift_fields_and_identity() {
+    check(one("WebcastGiftMessage",data(15,number(12,0)))["gift_unit_price"]==0,"Explicit zero gift price remains distinguishable from omission");
+    check(one("WebcastGiftMessage",data(15,""))["gift_unit_price"].is_null(),"Omitted gift price must not become zero");
     for (bool packed : {true, false}) {
         GiftOptions options; options.packed = packed;
         const auto payload = gift_wire(options);

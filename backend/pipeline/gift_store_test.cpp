@@ -638,8 +638,13 @@ void late_connection_status_cannot_override_active_stream() {
     check(store.rooms()[1]["status"]=="collecting","Dead-letter status is archived without changing connection state");
 }
 
+#include "analytics_test.inc"
+
 int main() {
     try {
+        audience_analytics();
+        analytics_backfill_and_precision();
+        analytics_query_validation();
         late_connection_status_cannot_override_active_stream();
         message_history_search();
         full_monitor_replay();

@@ -57,6 +57,7 @@ public:
 
 #include "message_search.inc"
 #include "message_presentation.inc"
+#include "analytics.inc"
 #include "startup_options.inc"
 
 class Store {
@@ -73,6 +74,7 @@ class Store {
         json list = json::array(); while(q.row()) { auto e = json::parse(q.str(1)); e["seq"] = std::to_string(q.number(0)); list.push_back(e); } return list;
     }
     #include "connection_state_store.inc"
+    #include "analytics_store.inc"
 public:
     Store() {
         auto path = env("DATABASE_PATH", "/data/pipeline.db"); std::filesystem::create_directories(std::filesystem::path(path).parent_path());
@@ -115,6 +117,7 @@ public:
             }
             exec("COMMIT");
         } catch(...) { exec("ROLLBACK"); throw; }
+        analytics_initialize();
     }
     ~Store() { sqlite3_close(db); }
     json rooms() {
@@ -280,6 +283,7 @@ public:
                 Statement ins(db,"INSERT OR IGNORE INTO events(event_id,live_id,body) VALUES(?,?,?)"); ins.text(1,e["event_id"]).text(2,frame.live_id()).text(3,e.dump()).row();
                 if(sqlite3_changes(db)==0) continue;
                 const auto seq=sqlite3_last_insert_rowid(db);
+                analytics_project(seq,frame.live_id(),e);
                 Statement view(db,"INSERT INTO message_views(live_id,display_id,last_seq,body) VALUES(?,?,?,?) ON CONFLICT(live_id,display_id) DO UPDATE SET last_seq=excluded.last_seq,body=excluded.body");
                 view.text(1,frame.live_id()).text(2,display_id).num(3,seq).text(4,e.dump()).row();
                 if(gift_delta>0) {
@@ -477,6 +481,22 @@ int main(int argc, char** argv) {
         http.Get("/api/rooms",[&](const httplib::Request&,httplib::Response& res){send(res,store.rooms());});
         http.Get("/api/messages/search",[&](const httplib::Request& req,httplib::Response& res){
             try {send(res,store.search_messages(read_message_search(req)));}
+            catch(const std::invalid_argument& e){res.status=400;send(res,{{"error",e.what()}});}
+        });
+        http.Get("/api/analytics/chat-ranking",[&](const httplib::Request& req,httplib::Response& res){
+            try {send(res,store.analytics_ranking(read_analytics_query(req),false));}
+            catch(const std::invalid_argument& e){res.status=400;send(res,{{"error",e.what()}});}
+        });
+        http.Get("/api/analytics/gift-ranking",[&](const httplib::Request& req,httplib::Response& res){
+            try {send(res,store.analytics_ranking(read_analytics_query(req),true));}
+            catch(const std::invalid_argument& e){res.status=400;send(res,{{"error",e.what()}});}
+        });
+        http.Get(R"(/api/analytics/users/([0-9]{1,32})/summary)",[&](const httplib::Request& req,httplib::Response& res){
+            try {send(res,store.analytics_user_summary(read_analytics_query(req),req.matches[1].str()));}
+            catch(const std::invalid_argument& e){res.status=400;send(res,{{"error",e.what()}});}
+        });
+        http.Get(R"(/api/analytics/users/([0-9]{1,32})/rooms)",[&](const httplib::Request& req,httplib::Response& res){
+            try {send(res,store.analytics_user_rooms(read_analytics_query(req),req.matches[1].str()));}
             catch(const std::invalid_argument& e){res.status=400;send(res,{{"error",e.what()}});}
         });
         http.Get("/api/messages/detail",[&](const httplib::Request& req,httplib::Response& res){

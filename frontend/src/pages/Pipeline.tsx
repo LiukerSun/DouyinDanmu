@@ -10,6 +10,7 @@ import MessageDetails from '../components/MessageDetails'
 import MessageArchive, { type ArchiveUser } from './MessageArchive'
 import CollectorIdentity from '../components/CollectorIdentity'
 import CookieSettings from '../components/CookieSettings'
+import RoomRankings from '../components/RoomRankings'
 import { useRoomStreams } from '../hooks/useRoomStreams'
 import { useRoomReorder } from '../hooks/useRoomReorder'
 import { wealthBands, fansBands, feedMessageTypes } from '../pipeline/message-colors'
@@ -75,6 +76,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const [roomInput, setRoomInput] = useState(''), [addError, setAddError] = useState('')
   const [inspectedEvent, setInspectedEvent] = useState<PipelineEvent | null>(null)
   const [filter, setFilter] = useState('all'), [keyword, setKeyword] = useState('')
+  const [roomContent, setRoomContent] = useState('messages')
   const [frozen, setFrozen] = useState<PipelineEvent[] | null>(null)
   const listRef = useRef<HTMLDivElement>(null), follow = useRef(true), loading = useRef(false)
   const streams = useRoomStreams(rooms.filter(room => room.enabled || view === 'room' && room.live_id === active).map(room => room.live_id))
@@ -151,7 +153,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const resetFilters = () => { setSearch(''); setStatus('all'); setView('overview') }
 
   const focusRoom = (id: string) => {
-    setActive(id); setFrozen(null); setFilter('all'); setKeyword(''); setView('room'); follow.current = true
+    setActive(id); setFrozen(null); setFilter('all'); setKeyword(''); setRoomContent('messages'); setView('room'); follow.current = true
   }
   const inspectUser = (event: PipelineEvent) => { setArchiveUser({ id: event.user_id, name: event.user_name }); setView('archive') }
   const openSettings = (id: string) => { setSettingsRoomId(id); setProfileOpen(false); setSettingsOpen(true) }
@@ -243,10 +245,10 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
           </div>
         </section>}
 
-        {view === 'room' && <section className="conversation-panel" aria-label="直播间实时互动">
+        {view === 'room' && <section className={'conversation-panel' + (roomContent === 'rankings' ? ' has-room-rankings' : '')} aria-label="直播间实时互动">
           <div className="panel-heading">
-            <div><h2><span className={'feed-indicator ' + (frozen ? 'is-paused' : '')} />实时行为 <span className="count-label">{messages.length}</span></h2><p>{room ? '正在查看 ' + roomName(room) : '选择直播间查看互动'}</p></div>
-            <div className="feed-heading-actions"><Button size="sm" variant="ghost" className="color-guide-button" onPress={() => setColorGuideOpen(true)}>配色说明</Button><Button size="sm" variant={frozen ? 'secondary' : 'ghost'} className="pause-button" onPress={() => { setFrozen(previous => previous ? null : allMessages); follow.current = true }}>{frozen ? <PlayCircleOutlined /> : <PauseOutlined />}{frozen ? '继续展示' : '暂停展示'}</Button></div>
+            <div><h2><span className={'feed-indicator ' + (frozen ? 'is-paused' : '')} />{roomContent === 'messages' ? <>实时行为 <span className="count-label">{messages.length}</span></> : '本房间排行榜'}</h2><p>{room ? '正在查看 ' + roomName(room) : '选择直播间查看互动'}</p></div>
+            {roomContent === 'messages' && <div className="feed-heading-actions"><Button size="sm" variant="ghost" className="color-guide-button" onPress={() => setColorGuideOpen(true)}>配色说明</Button><Button size="sm" variant={frozen ? 'secondary' : 'ghost'} className="pause-button" onPress={() => { setFrozen(previous => previous ? null : allMessages); follow.current = true }}>{frozen ? <PlayCircleOutlined /> : <PauseOutlined />}{frozen ? '继续展示' : '暂停展示'}</Button></div>}
           </div>
           {room && <div className="room-observation">
             <div className="active-room-summary"><Avatar key={room.live_id} room={room} /><div><span>当前选中</span><strong>{roomName(room)}</strong></div><Status room={room} />
@@ -260,6 +262,8 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
               <Button size="sm" variant="secondary" onPress={() => setProfileOpen(true)}><UserOutlined />主播信息</Button>
             </div>
           </div>}
+          {room && <StudioFilters label="直播间内容" className="room-content-tabs" value={roomContent} onChange={setRoomContent} options={[{ id: 'messages', label: '实时消息' }, { id: 'rankings', label: '本房间排行榜' }]} />}
+          {roomContent === 'rankings' && room ? <RoomRankings key={room.live_id} room={room.live_id} roomName={roomName(room)} /> : <>
           <div className="conversation-tools">
             <StudioSearch label="搜索消息" placeholder="搜索内容、昵称或 UID" value={keyword} onChange={setKeyword} clearLabel="清空消息搜索" />
           </div>
@@ -269,6 +273,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
             {messages.map(event => <div className="sourced-message" data-message-type={messageKind(event)} key={messageDisplayKey(event)}><PipelineMessage event={event} onInspectUser={inspectUser} onInspectEvent={setInspectedEvent} /></div>)}
           </div>
           <div className="conversation-footer"><span>{frozen ? '后台仍在接收所有房间消息' : '最多展示最近 500 条行为 · 房间状态在上方更新'}</span><Button size="sm" variant="ghost" onPress={() => { setFrozen(null); follow.current = true; listRef.current?.scrollTo({ top: listRef.current.scrollHeight }) }}>回到最新 <span aria-hidden="true">↓</span></Button></div>
+          </>}
         </section>}
 
 

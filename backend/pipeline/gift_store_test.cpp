@@ -182,7 +182,7 @@ void gift_progress_persists_once_per_group() {
         deliver(store, room_a, older);
         check(display_event(store.snapshot(room_a), "combo-1").at("gift_count") == 3,
               "Late lower count must not reduce the displayed count");
-        check(store.events(room_a, 0).back().at("gift_count") == 3,
+        check(store.frontend_batch(room_a, 0).at("events").back().at("gift_count") == 3,
               "Replay must publish normalized high-water count after a late update");
         check_stats(store, room_a, 1, 3);
 
@@ -196,7 +196,7 @@ void gift_progress_persists_once_per_group() {
         const auto ended = display_event(store.snapshot(room_a), "combo-1");
         check(ended.at("gift_count") == 3 && ended.at("gift_final") == true,
               "Final state must be sticky when lower/open progress arrives later");
-        check(store.events(room_a, 0).back().at("gift_final") == true,
+        check(store.frontend_batch(room_a, 0).at("events").back().at("gift_final") == true,
               "Journal consumers must also see sticky final state");
         check_stats(store, room_a, 1, 3);
 
@@ -232,7 +232,7 @@ void gift_progress_persists_once_per_group() {
         check_stats(reopened, room_a, 2, 6);
         check_stats(reopened, room_b, 1, 7);
         check(reopened.snapshot(room_b) == saved_b, "Updating one room must leave another room unchanged");
-        const auto replay = reopened.events(room_a, std::stoll(saved_a.at("through_seq").get<std::string>()));
+        const auto replay = reopened.frontend_batch(room_a, std::stoll(saved_a.at("through_seq").get<std::string>())).at("events");
         check(replay.size() == 1 && replay[0].at("gift_count") == 4 && replay[0].at("gift_final") == true,
               "Reconnection cursor must replay exactly the new normalized update");
         check_journal_cursor(reopened, room_a);
@@ -345,7 +345,7 @@ void gift_price_survives_sparse_progress() {
     deliver(store, room_a, next);
     check(display_event(store.snapshot(room_a), first.at("display_id")).at("gift_unit_price") == 10,
           "Sparse combo progress must retain the known unit price in the snapshot");
-    check(store.events(room_a, 0).back().at("gift_unit_price") == 10,
+    check(store.frontend_batch(room_a, 0).at("events").back().at("gift_unit_price") == 10,
           "Sparse combo progress must publish the known unit price to journal consumers");
 
     message.mutable_gift()->set_combo(true);
@@ -658,6 +658,7 @@ void debug_startup_and_details() {
     check(read_startup_options({"--debug"}).debug,"Explicit startup flag enables diagnostics");
     check(!read_startup_options({"--redecode-details"}).apply,"Re-decode remains read-only by default");
     check(read_startup_options({"--replay-quarantine","--apply"}).apply,"Existing maintenance commands remain available");
+    check(!read_startup_options({"--repair-gift-facts"}).apply && read_startup_options({"--repair-gift-facts","--apply"}).apply,"Gift fact repair is explicitly opt-in and dry-run by default");
     for(const auto& args:std::vector<std::vector<std::string>>{{"--debug=false"},{"--debug","--apply"},{"--redecode-details","--debug"},{"--unknown"}}) {
         bool rejected=false;try{read_startup_options(args);}catch(const std::invalid_argument&){rejected=true;}
         check(rejected,"Invalid flags must fail instead of silently enabling debug");
@@ -724,9 +725,16 @@ void late_connection_status_cannot_override_active_stream() {
 }
 
 #include "analytics_test.inc"
+#include "store_recovery_test.inc"
+#include "gift_fact_repair_test.inc"
 
 int main() {
     try {
+        gift_delivery_facts_stay_separate_from_display();
+        replay_promotes_failed_placeholders_atomically();
+        heartbeat_reports_backpressure_without_spool();
+        gift_fact_repair_restores_proven_groups();
+        gift_fact_repair_skips_incomplete_groups_and_rolls_back();
         audience_analytics();
         analytics_backfill_and_precision();
         analytics_query_validation();

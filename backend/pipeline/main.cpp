@@ -69,9 +69,21 @@ class Store {
         if (!q.row()) return json::object();
         return {{"chat",q.number(0)},{"gift",q.number(1)},{"gift_quantity",q.number(6)},{"enter",q.number(2)},{"like",q.number(3)},{"online",q.number(4)},{"total",q.number(5)}};
     }
-    json events_unlocked(const std::string& live, int64_t after, int limit) {
-        Statement q(db, "SELECT id,body FROM events WHERE live_id=? AND id>? ORDER BY id LIMIT ?"); q.text(1,live).num(2,after).num(3,limit);
-        json list = json::array(); while(q.row()) { auto e = json::parse(q.str(1)); e["seq"] = std::to_string(q.number(0)); list.push_back(e); } return list;
+    json events_unlocked(const std::string& live, int64_t after, int limit, bool presentation=false) {
+        Statement q(db, "SELECT e.id,e.body,p.fields FROM events e LEFT JOIN event_presentations p ON p.event_id=e.event_id WHERE e.live_id=? AND e.id>? ORDER BY e.id LIMIT ?"); q.text(1,live).num(2,after).num(3,limit);
+        json list = json::array(); while(q.row()) {
+            auto e = json::parse(q.str(1));
+            if(presentation && !q.str(2).empty())e.update(json::parse(q.str(2)));
+            e["seq"] = std::to_string(q.number(0)); list.push_back(e);
+        } return list;
+    }
+    void save_presentation_unlocked(const json& fact,const json& presentation) {
+        json fields=json::object();
+        for(auto it=presentation.begin();it!=presentation.end();++it)
+            if(!fact.contains(it.key()) || fact.at(it.key())!=it.value())fields[it.key()]=it.value();
+        if(fields.empty())return;
+        Statement insert(db,"INSERT INTO event_presentations(event_id,fields) VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET fields=excluded.fields");
+        insert.text(1,fact.at("event_id")).text(2,fields.dump()).row();
     }
     #include "connection_state_store.inc"
     #include "analytics_store.inc"
@@ -97,6 +109,7 @@ public:
           CREATE TABLE IF NOT EXISTS gift_totals(live_id TEXT PRIMARY KEY,quantity INTEGER NOT NULL DEFAULT 0);
           CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY);
           CREATE TABLE IF NOT EXISTS event_details(event_id TEXT PRIMARY KEY,body TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS event_presentations(event_id TEXT PRIMARY KEY,fields TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS room_connection_state(live_id TEXT PRIMARY KEY,desired_version INTEGER NOT NULL,session_id TEXT NOT NULL,session_seq TEXT NOT NULL,observed_at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS quarantine_resolutions(id TEXT PRIMARY KEY,resolved_at INTEGER NOT NULL);
         )SQL");
@@ -149,7 +162,7 @@ public:
     json events(const std::string& live, int64_t after, int limit=200) { std::lock_guard<std::mutex> guard(mutex); return events_unlocked(live,after,limit); }
     json frontend_batch(const std::string& live,int64_t after,int limit=200) {
         std::lock_guard<std::mutex> guard(mutex);
-        const auto journal=events_unlocked(live,after,limit);
+        const auto journal=events_unlocked(live,after,limit,true);
         json visible=json::array(),states=json::array(),latest=nullptr;
         for(const auto& event:journal) {
             if(feed_visible(event))visible.push_back(event);
@@ -166,7 +179,23 @@ public:
         for(const auto& id:ids) { Statement q(db,"SELECT frame_id FROM receipts WHERE frame_id=?"); q.text(1,id.get<std::string>()); if(q.row()) found.push_back(q.str(0)); } return found;
     }
     void heartbeat(const json& body) {
-        std::lock_guard<std::mutex> guard(mutex); Statement q(db,"INSERT INTO collector_state VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,seen_at=excluded.seen_at"); q.text(1,body.dump()).num(2,now_ms()).row();
+        std::lock_guard<std::mutex> guard(mutex);
+        exec("BEGIN IMMEDIATE");
+        try {
+            Statement q(db,"INSERT INTO collector_state VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,seen_at=excluded.seen_at");q.text(1,body.dump()).num(2,now_ms()).row();
+            if(body.contains("room_states"))for(const auto& state:body.at("room_states")) {
+                pipeline::RawFrameEnvelope observation;
+                observation.set_live_id(state.at("live_id").get<std::string>());
+                observation.set_desired_version(state.at("desired_version").get<uint64_t>());
+                observation.set_session_id(state.at("session_id").get<std::string>());
+                const auto sequence=state.at("session_seq").get<std::string>();
+                if(sequence.empty() || sequence.find_first_not_of("0123456789")!=std::string::npos)throw std::invalid_argument("Invalid observation sequence");
+                observation.set_session_seq(std::stoull(sequence));
+                observation.set_received_at_ms(state.at("observed_at_ms").get<int64_t>());
+                observe_connection_unlocked(observation,state.at("status").get<std::string>(),state.value("detail",""));
+            }
+            exec("COMMIT");
+        } catch(...) {exec("ROLLBACK");throw;}
     }
     json overview() {
         std::lock_guard<std::mutex> guard(mutex); json o;
@@ -219,11 +248,28 @@ public:
                 e["live_id"]=frame.live_id(); e["room_id"]=frame.room_id(); e["source"]=frame.source(); e["received_at_ms"]=frame.received_at_ms();
                 e["persisted_at_ms"]=now_ms();
                 const std::string type=e.at("type"), event_id=e.at("event_id");
-                if(e.contains("_details")) {
-                    Statement detail(db,"INSERT OR IGNORE INTO event_details VALUES(?,?)");detail.text(1,event_id).text(2,e["_details"].dump()).row();e.erase("_details");
+                Statement seen(db,"SELECT id,body,live_id FROM events WHERE event_id=?");seen.text(1,event_id);
+                bool existing=seen.row(),recovering=false;
+                if(existing && replay) {
+                    const auto old=json::parse(seen.str(1));
+                    recovering=old.value("type","")=="parse_error" && type!="parse_error" && e.value("parse_status","")!="failed";
+                    if(recovering) {
+                        if(seen.str(2)!=frame.live_id())throw std::runtime_error("replay room identity conflict");
+                        // Move a failed placeholder to a new outbox sequence so
+                        // clients past its hidden cursor can receive the recovery.
+                        Statement view(db,"DELETE FROM message_views WHERE live_id=? AND json_extract(body,'$.event_id')=?");view.text(1,frame.live_id()).text(2,event_id).row();
+                        const auto removed=sqlite3_changes(db);
+                        if(removed){Statement total(db,"UPDATE rooms SET total=total-? WHERE live_id=?");total.num(1,removed).text(2,frame.live_id()).row();}
+                        Statement presentation(db,"DELETE FROM event_presentations WHERE event_id=?");presentation.text(1,event_id).row();
+                        Statement fact(db,"DELETE FROM analytics_events WHERE seq=?");fact.num(1,seen.number(0)).row();
+                        Statement failed(db,"DELETE FROM events WHERE event_id=?");failed.text(1,event_id).row();
+                        existing=false;
+                    }
                 }
-                Statement seen(db,"SELECT id FROM events WHERE event_id=?"); seen.text(1,event_id);
-                if(seen.row()) {
+                if(e.contains("_details")) {
+                    Statement detail(db,recovering?"INSERT INTO event_details VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET body=excluded.body":"INSERT OR IGNORE INTO event_details VALUES(?,?)");detail.text(1,event_id).text(2,e["_details"].dump()).row();e.erase("_details");
+                }
+                if(existing) {
                     if(replay && e.value("has_details",false)) {
                         // Hydrate metadata without replaying counters or overwriting
                         // historical gift merges/user profile repairs.
@@ -234,6 +280,7 @@ public:
                     continue;
                 }
                 auto display_id=e.value("display_id",event_id);
+                auto presentation=e;
                 if(type=="gift" && !e.value("gift_group_key","").empty()) {
                     // Progress/terminal frames can omit the recipient or gift
                     // details. Continue an identified group only when its
@@ -254,12 +301,15 @@ public:
                                 e["gift_final"]=old.value("gift_final",false)||e.value("repeat_end",uint32_t(0))==1;
                             }
                             if(e.value("gift_name","")=="礼物 "+e.value("gift_id","")) {
-                                for(const auto* field:{"gift_name","content"}) if(old.contains(field)) e[field]=old[field];
+                                for(const auto* field:{"gift_name","content"}) if(old.contains(field)) presentation[field]=old[field];
                             }
                         }
                     }
                 }
                 e["display_id"]=display_id;
+                // Identity may be resolved from one compatible combo. Values,
+                // timestamps and profiles remain facts of this exact delivery.
+                for(const auto* field:{"display_id","recipient_id","gift_combo","gift_final"})if(e.contains(field))presentation[field]=e[field];
                 bool new_display=true; int64_t gift_delta=0;
                 if(type=="gift") {
                     const auto observed=e.at("gift_count").get<int64_t>();
@@ -272,24 +322,25 @@ public:
                         // Only an established display group may supply an omitted price.
                         if((!e.contains("gift_unit_price") || e.at("gift_unit_price").is_null()) &&
                            old.contains("gift_unit_price") && !old.at("gift_unit_price").is_null())
-                            e["gift_unit_price"]=old.at("gift_unit_price");
+                             presentation["gift_unit_price"]=old.at("gift_unit_price");
                         // Late progress frames must not roll back richer terminal data.
                         if(observed<previous || (finalized&&!e.value("gift_final",false))) {
                             for(const auto* field:{"user_name","user_level","fans_club","gift_name","content","timestamp"}) {
-                                if(old.contains(field)) e[field]=old[field];
+                                if(old.contains(field)) presentation[field]=old[field];
                             }
                         }
                     }
                     const auto count=std::max(previous,observed);
-                    e["gift_count"]=count; e["gift_final"]=finalized||e.value("gift_final",false);
+                    presentation["gift_count"]=count; presentation["gift_final"]=finalized||e.value("gift_final",false);
                     gift_delta=count-previous;
                 }
                 Statement ins(db,"INSERT OR IGNORE INTO events(event_id,live_id,body) VALUES(?,?,?)"); ins.text(1,e["event_id"]).text(2,frame.live_id()).text(3,e.dump()).row();
                 if(sqlite3_changes(db)==0) continue;
                 const auto seq=sqlite3_last_insert_rowid(db);
                 analytics_project(seq,frame.live_id(),e);
+                save_presentation_unlocked(e,presentation);
                 Statement view(db,"INSERT INTO message_views(live_id,display_id,last_seq,body) VALUES(?,?,?,?) ON CONFLICT(live_id,display_id) DO UPDATE SET last_seq=excluded.last_seq,body=excluded.body");
-                view.text(1,frame.live_id()).text(2,display_id).num(3,seq).text(4,e.dump()).row();
+                view.text(1,frame.live_id()).text(2,display_id).num(3,seq).text(4,presentation.dump()).row();
                 if(gift_delta>0) {
                     Statement quantity(db,"INSERT INTO gift_totals(live_id,quantity) VALUES(?,?) ON CONFLICT(live_id) DO UPDATE SET quantity=gift_totals.quantity+excluded.quantity");
                     quantity.text(1,frame.live_id()).num(2,gift_delta).row();
@@ -315,6 +366,7 @@ public:
 #include "event_parser.inc"
 #include "quarantine_replay.inc"
 #include "detail_redecode.inc"
+#include "gift_fact_repair.inc"
 
 static void ingest_body(Store& store,const std::string& body,bool dead=false) {
 pipeline::RawFrameEnvelope frame; json events=json::array(), errors=json::array();
@@ -468,6 +520,7 @@ int main(int argc, char** argv) {
         const auto options=read_startup_options(std::vector<std::string>(argv+1,argv+argc));
         if(!options.command.empty()) {
             if(options.command=="--redecode-details"){const auto report=redecode_details(options.apply);std::cout<<report.dump(2)<<std::endl;return report["failed"].get<int>()?2:0;}
+            if(options.command=="--repair-gift-facts"){const auto report=repair_gift_facts(options.apply);std::cout<<report.dump(2)<<std::endl;return report["failed"].get<int>()?2:0;}
             return replay_quarantine(options.apply);
         }
         Store store; Cache cache; httplib::Server http;

@@ -5,7 +5,6 @@ const crypto = require('node:crypto');
 const { promisify } = require('node:util');
 const { portableRequest } = require('./portable-web');
 const scrypt = promisify(crypto.scrypt);
-const COOKIE = 'studio_session';
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const SCRYPT = { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 };
 const publicUser = user => ({ username: user.username, displayName: user.displayName, role: '管理员' });
@@ -18,6 +17,10 @@ async function createAuthServer({ dataDir, origins = ['http://localhost:3000', '
   try { user = JSON.parse(await fs.readFile(accountFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const sessions = new Map(), attempts = new Map();
   const allowed = new Set(origins), hosts = new Set(origins.map(origin => new URL(origin).host));
+  // Browsers share cookies across ports. Use the configured public origins so
+  // independent workbenches cannot overwrite each other, including behind Nginx
+  // where every auth service listens on 8091. All aliases of one server agree.
+  const cookieName = 'studio_session_' + digest(JSON.stringify([...allowed].sort())).slice(0, 16);
   let settingUp = false, changingPassword = false, hashing = 0;
   const liveConnections = new Set();
   const revoke = key => {
@@ -30,7 +33,7 @@ async function createAuthServer({ dataDir, origins = ['http://localhost:3000', '
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers });
     res.end(JSON.stringify(body));
   };
-  const tokenFrom = req => (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1) || '';
+  const tokenFrom = req => (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(cookieName + '='))?.slice(cookieName.length + 1) || '';
   const sessionFrom = req => {
     const token = tokenFrom(req);
     if (!/^[a-f0-9]{64}$/.test(token)) return null;
@@ -38,7 +41,7 @@ async function createAuthServer({ dataDir, origins = ['http://localhost:3000', '
     if (!session || session.expires <= now()) { revoke(key); return null; }
     return session;
   };
-  const cookie = (token, req, maxAge) => `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${allowed.has('https://' + req.headers.host) ? '; Secure' : ''}`;
+  const cookie = (token, req, maxAge) => `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${allowed.has('https://' + req.headers.host) ? '; Secure' : ''}`;
   const startSession = (req, res) => {
     revoke(digest(tokenFrom(req)));
     const token = crypto.randomBytes(32).toString('hex');
@@ -90,6 +93,9 @@ async function createAuthServer({ dataDir, origins = ['http://localhost:3000', '
       const username = typeof body.username === 'string' ? body.username.trim() : '';
       const password = typeof body.password === 'string' ? body.password : '';
       if (!password || password.length > 128 || (req.url !== '/api/auth/password' && !/^[a-zA-Z0-9_.-]{3,32}$/.test(username))) return send(res, 400, { error: '请输入有效账号和密码' });
+      // Reading the request body yielded to other requests. Recheck and reserve
+      // together before the next await so streamed bodies cannot bypass the cap.
+      if (hashing >= 2) return send(res, 429, { error: '正在处理登录请求，请稍后重试' }, { 'Retry-After': '2' });
       hashing++;
       try {
         if (req.url === '/api/auth/setup') {

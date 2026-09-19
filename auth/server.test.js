@@ -95,3 +95,84 @@ test('authenticated WebSocket is closed when its session is revoked', async t =>
   await post('/api/auth/logout', {}, cookie);
   await closed;
 });
+
+async function authFixture(t, options = {}) {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-auth-boundary-'));
+  const server = await createAuthServer({ dataDir, ...options });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+  const origin = options.origins?.[0] || 'http://localhost:3000';
+  const requestOptions = (url, body, cookie = '', headers = {}) => ({
+    host: '127.0.0.1', port: server.address().port, path: url, method: body === undefined ? 'GET' : 'POST',
+    headers: { Host: new URL(origin).host, Origin: origin, 'Content-Type': 'application/json', Cookie: cookie, ...headers },
+  });
+  const request = (url, body, cookie = '', headers = {}) => new Promise((resolve, reject) => {
+    const req = http.request(requestOptions(url, body, cookie, headers), res => {
+      res.resume(); res.on('end', () => resolve({ status: res.statusCode, cookie: res.headers['set-cookie']?.[0] }));
+    });
+    req.on('error', reject); req.end(body === undefined ? undefined : JSON.stringify(body));
+  });
+  return { server, request, requestOptions };
+}
+
+test('login hash capacity is checked after all streamed bodies arrive and released after rejection', async t => {
+  const fixture = await authFixture(t);
+  const account = { username: 'bounded', password: 'bounded-login-test-password' };
+  assert.equal((await fixture.request('/api/auth/setup', account)).status, 200);
+  let readyCount = 0, releaseReady;
+  const allBodiesStarted = new Promise(resolve => { releaseReady = resolve; });
+  fixture.server.on('request', req => {
+    if (req.headers['x-streamed-test']) req.once('data', () => { if (++readyCount === 3) releaseReady(); });
+  });
+  const requests = [];
+  const responses = Array.from({ length: 3 }, () => new Promise((resolve, reject) => {
+    const req = http.request(fixture.requestOptions('/api/auth/login', account, '', { 'X-Streamed-Test': '1' }), res => {
+      res.resume(); res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', reject); requests.push(req);
+    // All handlers pass the pre-body checks before any request can start scrypt.
+    req.write(JSON.stringify(account).slice(0, -1));
+  }));
+  await allBodiesStarted;
+  for (const req of requests) req.end('}');
+  assert.deepEqual((await Promise.all(responses)).sort(), [200, 200, 429]);
+  const invalid = { ...account, password: 'wrong-test-password' };
+  assert.deepEqual((await Promise.all([fixture.request('/api/auth/login', invalid), fixture.request('/api/auth/login', invalid)])).map(r => r.status), [401, 401]);
+  assert.deepEqual((await Promise.all([fixture.request('/api/auth/login', account), fixture.request('/api/auth/login', account)])).map(r => r.status), [200, 200]);
+});
+
+test('independent public ports retain their sessions in one host cookie jar', async t => {
+  // The auth service can sit behind Nginx: namespace by configured public origins,
+  // never its internal listen port (8091 for every Docker auth service).
+  const a = await authFixture(t);
+  const b = await authFixture(t, { origins: ['http://localhost:3001', 'http://127.0.0.1:3001'] });
+  const account = { username: 'isolated', password: 'isolated-session-test-password' };
+  const jar = new Map();
+  const storeCookie = header => {
+    const pair = header.split(';')[0], split = pair.indexOf('=');
+    const name = pair.slice(0, split), value = pair.slice(split + 1);
+    if (/Max-Age=0(?:;|$)/.test(header)) jar.delete(name); else jar.set(name, value);
+    return name;
+  };
+  const cookies = () => [...jar].map(([name, value]) => name + '=' + value).join('; ');
+  const first = await a.request('/api/auth/setup', account);
+  assert.equal(first.status, 200);
+  const nameA = storeCookie(first.cookie);
+  const second = await b.request('/api/auth/setup', account, cookies());
+  assert.equal(second.status, 200);
+  const nameB = storeCookie(second.cookie);
+  assert.equal((await a.request('/verify', undefined, cookies())).status, 200);
+  assert.equal((await b.request('/verify', undefined, cookies())).status, 200);
+  assert.notEqual(nameA, nameB);
+  const alias = await a.request('/api/auth/login', account, '', { Host: '127.0.0.1:3000', Origin: 'http://127.0.0.1:3000' });
+  assert.equal(alias.status, 200);
+  assert.equal(alias.cookie.split('=')[0], nameA);
+  assert.doesNotMatch(alias.cookie, /Domain=/i); // localhost and 127.0.0.1 stay host-only cookies.
+  const logout = await a.request('/api/auth/logout', {}, cookies());
+  storeCookie(logout.cookie);
+  assert.equal((await a.request('/verify', undefined, cookies())).status, 401);
+  assert.equal((await b.request('/verify', undefined, cookies())).status, 200);
+});

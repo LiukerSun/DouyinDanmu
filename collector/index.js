@@ -25,6 +25,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const sessions = new Map(), published = new Map();
 let connection, channel, root, Envelope, PushFrame, Response;
 let running = true, spoolBytes = 0, mqConnected = false, totalPublished = 0, totalReceived = 0;
+let spoolQuarantine = { files: 0, bytes: 0 };
 let settingsServer;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function waitForSession(session, ms) {
@@ -42,12 +43,21 @@ async function api(route, body) {
   if (!response.ok) throw new Error(`Backend ${route}: ${response.status}`);
   return response.json();
 }
-function persist(session, payload, kind = 'upstream_frame') {
-  if (payload.length > MAX_FRAME_BYTES || spoolBytes + payload.length > MAX_SPOOL_BYTES) throw new Error('本地采集缓冲已满或帧超限');
+function connectionState(session, state, detail, sequence, observedAt) {
+  return { live_id: session.live_id, desired_version: session.version, session_id: session.id,
+    session_seq: sequence, observed_at_ms: observedAt, status: state, detail };
+}
+function persist(session, payload, kind = 'upstream_frame', observation) {
+  if (payload.length > MAX_FRAME_BYTES || spoolBytes + payload.length > MAX_SPOOL_BYTES) {
+    const error = new Error('本地采集缓冲已满或帧超限');
+    error.code = payload.length > MAX_FRAME_BYTES ? 'FRAME_TOO_LARGE' : 'SPOOL_FULL';
+    throw error;
+  }
   const id = crypto.randomUUID();
+  const sequence = observation?.session_seq || String(++session.seq), receivedAt = observation?.observed_at_ms || Date.now();
   const body = Buffer.from(Envelope.encode(Envelope.fromObject({
     schemaVersion: 1, frameId: id, liveId: session.live_id, roomId: session.room_id || session.live_id,
-    sessionId: session.id, sessionSeq: String(++session.seq), receivedAtMs: String(Date.now()),
+    sessionId: session.id, sessionSeq: sequence, receivedAtMs: String(receivedAt),
     payload, payloadSha256: hash(payload), source: session.source, kind, desiredVersion: String(session.version),
   })).finish());
   const tmp = path.join(SPOOL, id + '.tmp'), target = path.join(SPOOL, id + '.bin');
@@ -56,6 +66,7 @@ function persist(session, payload, kind = 'upstream_frame') {
   fs.renameSync(tmp, target);
   syncDirectory(SPOOL);
   spoolBytes += body.length; totalReceived++;
+  if (kind === 'upstream_frame') session.observation = connectionState(session, 'collecting', '已连接，正在接收直播数据', sequence, receivedAt);
   if (RAW_CAPTURE && kind === 'upstream_frame' && !rawCaptureFull) {
     try {
       if (rawCaptureBytes + body.length > MAX_RAW_CAPTURE) { rawCaptureFull = true; console.error('[capture] diagnostic archive reached 64 MiB'); }
@@ -66,8 +77,15 @@ function persist(session, payload, kind = 'upstream_frame') {
 }
 function status(session, state, detail = '') {
   if (!session.active) return;
-  try { persist(session, Buffer.from(JSON.stringify({ status: state, detail })), 'collector_status'); }
-  catch (e) { console.error('[status]', e.message); }
+  // Keep the same observation in the journal and the independent heartbeat.
+  // Even a full spool must not hide why this session stopped receiving data.
+  const observation = connectionState(session, state, detail, String(++session.seq), Date.now());
+  session.observation = observation;
+  try { persist(session, Buffer.from(JSON.stringify({ status: state, detail })), 'collector_status', observation); }
+  catch (e) {
+    if (e.code === 'SPOOL_FULL') { observation.status = 'backpressured'; observation.detail = e.message; }
+    console.error('[status]', e.message);
+  }
 }
 async function connectQueue() {
   const conn = await amqp.connect(AMQP_URL + '?heartbeat=15');
@@ -238,14 +256,14 @@ async function live(session) {
             const payload = frame.payload[0] === 0x1f && frame.payload[1] === 0x8b ? zlib.gunzipSync(frame.payload, { maxOutputLength: 16 * 1024 * 1024 }) : frame.payload;
             const response = Response.decode(payload);
             if (response.needAck) ws.send(encode('PushFrame', { logId: String(frame.logId), payloadType: 'ack', payload: Buffer.from(response.internalExt) }));
-          } catch (e) { status(session, 'failed', e.message); ws.close(); }
+          } catch (e) { status(session, e.code === 'SPOOL_FULL' ? 'backpressured' : 'failed', e.message); ws.close(); }
         });
         ws.on('error', err => { cleanup(); reject(err); });
         ws.on('close', () => { cleanup(); resolve(); });
       });
     } catch (e) {
       if (!roomObserved) { try { unknownRoomInfo(session); } catch (error) { console.error('[room-info]', error.message); } }
-      status(session, 'failed', e.message); console.error('[live]', session.live_id, e.message);
+      status(session, e.code === 'SPOOL_FULL' ? 'backpressured' : 'failed', e.message); console.error('[live]', session.live_id, e.message);
     }
     if (session.active) { attempt++; await waitForSession(session, Math.min(30000, 2000 * attempt)); }
   }
@@ -265,7 +283,8 @@ async function reconcileLoop() {
         (target.source === 'demo' ? demo(session) : live(session)).catch(e => console.error('[session]', e.message));
       }
       const roomAuth = Object.fromEntries(targets.filter(t => t.source === 'douyin').map(t => [t.live_id, roomCookies.forRoom(t.live_id).status()]));
-      await api('heartbeat', { rabbitmq: mqConnected, spool_bytes: spoolBytes, published: totalPublished, received: totalReceived, sessions: sessions.size, raw_capture_bytes: rawCaptureBytes, raw_capture_full: rawCaptureFull, room_auth: roomAuth });
+      const roomStates = [...sessions.values()].filter(session => session.active && session.observation).map(session => session.observation);
+      await api('heartbeat', { rabbitmq: mqConnected, spool_bytes: spoolBytes, spool_quarantine: spoolQuarantine, published: totalPublished, received: totalReceived, sessions: sessions.size, raw_capture_bytes: rawCaptureBytes, raw_capture_full: rawCaptureFull, room_auth: roomAuth, room_states: roomStates });
     } catch(e) { console.error('[control]', e.message); }
     await sleep(2000);
   }
@@ -284,12 +303,30 @@ async function main() {
   // Recover complete fsynced records left before rename after an interrupted write.
   root = await protobuf.load([path.join(__dirname,'proto/douyin.proto'),path.join(__dirname,'proto/ingest.proto')]);
   Envelope = root.lookupType('pipeline.RawFrameEnvelope'); PushFrame = root.lookupType('PushFrame'); Response = root.lookupType('Response');
-  for (const f of fs.readdirSync(SPOOL)) {
-    if (f.endsWith('.tmp')) {
-      const full = path.join(SPOOL,f); try { Envelope.decode(fs.readFileSync(full)); fs.renameSync(full,full.replace(/\.tmp$/,'.bin')); } catch { console.error('[spool] incomplete record retained:', f); }
+  const quarantine = path.join(SPOOL, 'quarantine');
+  for (const file of fs.readdirSync(SPOOL, { withFileTypes: true })) {
+    const f = file.name;
+    if (file.isFile() && f.endsWith('.tmp')) {
+      const full = path.join(SPOOL, f);
+      try { Envelope.decode(fs.readFileSync(full)); }
+      catch {
+        // Preserve interrupted bytes for diagnosis without permanently consuming
+        // capacity that only deliverable .bin records can release.
+        fs.mkdirSync(quarantine, { recursive: true });
+        fs.renameSync(full, path.join(quarantine, f + '.' + crypto.randomUUID()));
+        syncDirectory(quarantine); syncDirectory(SPOOL);
+        console.error('[spool] incomplete record quarantined:', f);
+        continue;
+      }
+      fs.renameSync(full, full.replace(/\.tmp$/, '.bin'));
+      syncDirectory(SPOOL);
     }
   }
-  spoolBytes = fs.readdirSync(SPOOL).reduce((sum,f) => sum + fs.statSync(path.join(SPOOL,f)).size,0);
+  spoolBytes = fs.readdirSync(SPOOL, { withFileTypes: true }).filter(file => file.isFile() && file.name.endsWith('.bin')).reduce((sum, file) => sum + fs.statSync(path.join(SPOOL, file.name)).size, 0);
+  if (fs.existsSync(quarantine)) {
+    const files = fs.readdirSync(quarantine, { withFileTypes: true }).filter(file => file.isFile());
+    spoolQuarantine = { files: files.length, bytes: files.reduce((sum, file) => sum + fs.statSync(path.join(quarantine, file.name)).size, 0) };
+  }
   settingsServer = createSettingsServer({ roomCookies,
     isKnownRoom: async liveId => (await api('targets')).some(t => t.live_id === liveId && t.source === 'douyin'),
     onChange: reconnectDouyinSession,

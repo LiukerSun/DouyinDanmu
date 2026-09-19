@@ -117,6 +117,7 @@ Compose 包含网页入口、登录服务、采集器、C++ 后端、RabbitMQ �
 | `data/auth/` | 管理员账号资料 |
 | `data/config/rooms/` | 每个直播间的 Cookie 配置 |
 | `data/spool/` | 待确认入库的采集缓冲 |
+| `data/spool/quarantine/` | 中断写入后无法完整恢复的文件；独立保留，不占活动采集缓冲配额 |
 | `data/.runtime/` | 运行锁及本机控制信息 |
 | `logs/` | 运行日志 |
 
@@ -125,6 +126,8 @@ Compose 包含网页入口、登录服务、采集器、C++ 后端、RabbitMQ �
 Docker 使用 `backend-data`、`collector-data`、`auth-data` 和 `rabbit-data` 命名卷。备份前停止 Compose 服务，并备份这些卷；实际卷名带有 Compose 项目前缀。`docker compose down -v` 会删除命名卷中的数据，不应作为普通停机命令。
 
 Cookie、账号资料、数据库和日志可能包含私人信息，请保存在受控目录中，不要提交到源码仓库或加入分发包。Docker 与便携版的数据不会自动迁移。
+
+缓冲写满时，房间会通过独立心跳显示“缓冲已满”；投递恢复后自动继续采集。无法恢复的临时文件保留在上述隔离目录，数量与体积显示在“服务运行状态”，维护时可随整个数据目录备份检查。旧版本礼物统计若受展示价格或时间影响，可使用默认只读、执行前备份的 [`--repair-gift-facts` 维护命令](backend/pipeline/analytics-api.md#数据维护与性能)。
 
 ## WebSocket 接入
 

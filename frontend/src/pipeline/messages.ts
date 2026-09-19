@@ -21,6 +21,7 @@ export type PipelineEvent = {
   fans_club?: FansClub | null
   content: string
   gift_count: number
+  gift_unit_price?: number | null
   gift_combo?: boolean
   gift_final?: boolean
   persisted_at_ms: number

@@ -103,6 +103,8 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .channel-card.is-active { border-color: #c7bcec; background: #f9f7ff; }
 .channel-card.is-active::before { content: ""; position: absolute; left: -1px; top: 17px; bottom: 17px; width: 3px; background: #8170d5; border-radius: 0 3px 3px 0; }
 .channel-card.needs-attention { border-color: #e2c696; }
+.channel-card.is-stopped { opacity: 0.6; border-style: dashed; border-color: #d8d3e3; background: #faf9fc; }
+.channel-card.is-stopped:hover { opacity: 0.85; }
 .channel-card-top { display: flex; align-items: center; gap: 8px; }
 .console-app .pin-button { margin-left: auto; height: 23px; min-height: 23px; width: 23px; min-width: 23px; color: #b0a9bd; }
 .console-app .pin-button.is-pinned { color: #8170ca; }
@@ -208,6 +210,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .collector-identity.configured > span i { background: #47977b; }
 .message-uid { display: inline-flex; align-items: center; gap: 3px; }
 .gift-number { font-size: 13px; color: #a47531; margin-left: 8px; font-weight: 600; }
+.gift-price { font-size: 12px; color: #b8860b; margin-left: 6px; font-weight: 500; white-space: nowrap; }
 .gift-progress { margin-left: 8px; font-size: 11px; padding: 2px 5px; border-radius: 3px; color: #a1763a; background: #fff4e2; }
 .console-app .identity-config-button { min-height: 34px; font-size: 12px; margin-top: 13px; background: #f5f2fa; border-color: #e8e1f1; color: #8b77a5; }
 .console-app .room-control-button { margin-top: 16px; font-size: 12px; color: #7c6a90; }
@@ -403,6 +406,10 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .monitor-overview .add-channel { min-height: 180px; height: 100%; }
 .monitor-overview .room-list > .empty-state { grid-column: 1 / -1; }
 .console-app .remove-monitor:hover { color: #b23c4b; background: #fff0f2; }
+.console-app .toggle-monitor.start { color: #2e7d52; }
+.console-app .toggle-monitor.start:hover { color: #1b5e3a; background: #edf7f1; }
+.console-app .toggle-monitor.pause { color: #b8860b; }
+.console-app .toggle-monitor.pause:hover { color: #8b6914; background: #fff8e1; }
 @media (max-width: 1020px) {
   .monitor-overview .rooms-panel { height: auto; min-height: 650px; max-height: none; }
   .monitor-overview .room-list { max-height: none; overflow: visible; }
@@ -504,4 +511,42 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
   .room-live-metrics { flex-basis: 100%; order: 2; margin: 0; padding: 8px 0 0; border-left: 0; border-top: 1px solid #ece8f3; justify-content: space-between; gap: 8px; }
   .console-app .expanded-message-filters { gap: 4px; }
   .console-app .expanded-message-filters .button { padding-inline: 8px; font-size: 11px; }
+}
+
+/* Share a toolbar row so controls leave room for the live feed. */
+@media (min-width: 761px) {
+  .studio-workspace:has(.room-detail-view) { height: calc(100dvh - 62px); min-height: 0; }
+  .console-grid.room-detail-view { flex: 1; }
+  .room-detail-view .conversation-panel { height: auto; }
+  .room-detail-view .conversation-panel:not(.has-room-rankings) { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; }
+  .room-detail-view .conversation-panel > * { grid-column: 1 / -1; }
+  .room-detail-view .panel-heading { grid-row: 1; }
+  .room-detail-view .room-observation { grid-row: 2; }
+  .room-detail-view .room-content-tabs { grid-column: 1; grid-row: 3; align-items: center; border-bottom: 0; }
+  .room-detail-view .conversation-tools { grid-column: 2; grid-row: 3; padding-left: 0; }
+  .room-detail-view .message-filters { grid-row: 4; }
+  .room-detail-view .message-list { grid-row: 5; }
+  .room-detail-view .conversation-footer { grid-row: 6; }
+  .room-detail-view .conversation-panel.has-room-rankings .room-content-tabs { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .room-detail-view .conversation-panel { height: auto; min-height: calc(100dvh - 170px); }
+  .room-detail-view .message-list { flex: none; height: max(360px, 55dvh); }
+}
+
+/* Compact spacing in short windows, including high-DPI display scaling. */
+@media (max-height: 850px) {
+  .studio-workspace:has(.room-detail-view) .studio-header { min-height: 56px; padding-block: 8px; }
+  .room-detail-view .panel-heading { min-height: 44px; padding-block: 6px; }
+  .room-detail-view .panel-heading p { display: none; }
+  .room-detail-view .active-room-summary { min-height: 52px; padding-block: 6px; }
+  .room-detail-view .room-content-tabs { padding-block: 4px; }
+  .room-detail-view .conversation-tools { padding-block: 6px; }
+  .console-app .room-detail-view .expanded-message-filters { padding-block: 4px; }
+  .room-detail-view .conversation-footer { min-height: 34px; padding-block: 2px; }
+  .room-detail-view .message-list { padding: 6px; gap: 6px; }
+  .room-detail-view .sourced-message { padding: 5px 12px; }
+  .room-detail-view .message-body { gap: 2px; }
+  .room-detail-view .message-meta { min-height: 24px; }
+  .console-app .room-detail-view .message-meta .button { min-height: 24px; height: 24px; padding-block: 0; }
 }

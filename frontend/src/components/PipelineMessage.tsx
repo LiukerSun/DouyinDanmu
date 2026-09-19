@@ -10,6 +10,7 @@ const time = (timestamp: number) => new Date(timestamp).toLocaleTimeString('zh-C
 
 export default function PipelineMessage({ event, onInspectUser, onInspectEvent, showDate = false }: { event: PipelineEvent; onInspectUser?: (event: PipelineEvent) => void; onInspectEvent?: (event: PipelineEvent) => void; showDate?: boolean }) {
   const kind = messageKind(event)
+  const giftValue = event.gift_unit_price != null && Number.isFinite(event.gift_unit_price) && event.gift_unit_price >= 0 ? event.gift_unit_price * event.gift_count : null
   const inlineContent = event.type === 'enter' || event.type === 'system'
   const hasUser = !!event.user_id || ['chat', 'gift', 'enter', 'like', 'social', 'emoji', 'fansclub'].includes(event.type)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -47,7 +48,7 @@ export default function PipelineMessage({ event, onInspectUser, onInspectEvent, 
       {onInspectEvent && <Button size="sm" variant="ghost" aria-label={'查看消息详情 · ' + (labels[kind] || '消息')} onPress={() => onInspectEvent(event)}>详情</Button>}
       <time>{showDate ? new Date(event.timestamp).toLocaleString('zh-CN', { hour12: false }) : time(event.timestamp)}</time>
       </div>
-      {!inlineContent && <div className="message-content">{event.type === 'gift' ? <>送出 <Chip className="message-chip gift-token" data-tone={giftTone(event.content)}><GiftOutlined /><span className="gift-name">{event.content}</span><strong className="gift-number">× {event.gift_count}</strong></Chip>{event.gift_combo !== false && event.gift_final != null && <span className={'gift-progress ' + (event.gift_final ? 'complete' : '')}>{event.gift_final ? '连送完成' : '连送中'}</span>}</> : <ChatContent content={messageContent(event)} />}</div>}
+      {!inlineContent && <div className="message-content">{event.type === 'gift' ? <>送出 <Chip className="message-chip gift-token" data-tone={giftTone(event.content)}><GiftOutlined /><span className="gift-name">{event.content}</span><strong className="gift-number">× {event.gift_count}</strong></Chip>{giftValue != null && <span className="gift-price">{giftValue.toLocaleString('zh-CN')} 钻石</span>}{event.gift_combo !== false && event.gift_final != null && <span className={'gift-progress ' + (event.gift_final ? 'complete' : '')}>{event.gift_final ? '连送完成' : '连送中'}</span>}</> : <ChatContent content={messageContent(event)} />}</div>}
     </div>
     <span className="message-seq">#{event.seq}</span>
   </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Avatar as HeroAvatar, Button, Card, Checkbox, Chip, EmptyState, Label, Link, Modal, TextArea, Toast, Tooltip, Spinner } from '@heroui/react'
-import { AppstoreOutlined, ArrowLeftOutlined, DeleteOutlined, CheckCircleOutlined, CloseOutlined, MenuFoldOutlined, DatabaseOutlined, MessageOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, SearchOutlined, SettingOutlined, ThunderboltFilled, UserOutlined, WarningOutlined, WifiOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, ArrowLeftOutlined, CheckCircleOutlined, CloseOutlined, MenuFoldOutlined, DatabaseOutlined, MessageOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, SearchOutlined, SettingOutlined, ThunderboltFilled, UserOutlined, WarningOutlined, WifiOutlined } from '@ant-design/icons'
 import StudioSelect from '../components/StudioSelect'
 import StudioSearch from '../components/StudioSearch'
 import StudioFilters from '../components/StudioFilters'
@@ -40,7 +40,7 @@ function Avatar({ room }: { room: Room }) {
   return <HeroAvatar className="room-avatar"><HeroAvatar.Image src={room.metadata?.anchor.avatar_url || undefined} alt="" referrerPolicy="no-referrer" /><HeroAvatar.Fallback>{Array.from(roomName(room))[0]}</HeroAvatar.Fallback></HeroAvatar>
 }
 function Status({ room }: { room: Room }) {
-  return <Chip size="sm" variant="soft" color={needsAttention(room) ? 'warning' : room.status === 'collecting' ? 'success' : 'default'}><span className="status-dot" />{statusLabels[room.status] || room.status}</Chip>
+  return <Chip size="sm" variant="soft" color={needsAttention(room) ? 'warning' : room.enabled && room.status === 'collecting' ? 'success' : 'default'}><span className="status-dot" />{!room.enabled ? '已暂停' : statusLabels[room.status] || room.status}</Chip>
 }
 
 export default function Pipeline({ user, onAccount }: { user: StudioUser; onAccount: () => void }) {
@@ -88,7 +88,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
       if (roomResult.status === 'fulfilled') {
         const next = roomResult.value.filter(room => room.source === 'douyin')
         setRooms(next); setActive(previous => next.some(room => room.live_id === previous) ? previous : next[0]?.live_id || '')
-        setSelected(previous => previous.filter(id => next.some(room => room.live_id === id && room.enabled))); setServiceError('')
+        setSelected(previous => previous.filter(id => next.some(room => room.live_id === id))); setServiceError('')
       } else setServiceError('房间状态更新失败，当前显示上次成功获取的数据。正在自动重试。')
       setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
     } finally { setLoaded(true); loading.current = false }
@@ -101,11 +101,14 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const orderedIds = useMemo(() => completeRoomOrder(roomOrder, rooms.map(item => item.live_id)), [roomOrder, rooms])
   const manualRank = useMemo(() => new Map(orderedIds.map((id, index) => [id, index])), [orderedIds])
   const filtered = useMemo(() => rooms.filter(item => {
-    if (!item.enabled) return false
+    if (!item.enabled) return view !== 'attention' && status !== 'live' && `${roomName(item)} ${item.live_id} ${item.metadata?.title || ''}`.toLowerCase().includes(search.trim().toLowerCase())
     if (view === 'attention' && !needsAttention(item)) return false
     if (status === 'live' && !isLive(item)) return false
     return `${roomName(item)} ${item.live_id} ${item.metadata?.title || ''}`.toLowerCase().includes(search.trim().toLowerCase())
-  }).sort((a, b) => sort === 'manual' ? (manualRank.get(a.live_id)! - manualRank.get(b.live_id)!) : sort === 'online' ? ((isLive(b) && b.enabled ? b.stats.online : 0) - (isLive(a) && a.enabled ? a.stats.online : 0)) : sort === 'chat' ? b.stats.chat - a.stats.chat : Number(pinned.includes(b.live_id)) - Number(pinned.includes(a.live_id)) || Number(needsAttention(b)) - Number(needsAttention(a))), [rooms, view, pinned, status, search, sort, manualRank])
+  }).sort((a, b) => {
+    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
+    return sort === 'manual' ? (manualRank.get(a.live_id)! - manualRank.get(b.live_id)!) : sort === 'online' ? ((isLive(b) && b.enabled ? b.stats.online : 0) - (isLive(a) && a.enabled ? a.stats.online : 0)) : sort === 'chat' ? b.stats.chat - a.stats.chat : Number(pinned.includes(b.live_id)) - Number(pinned.includes(a.live_id)) || Number(needsAttention(b)) - Number(needsAttention(a))
+  }), [rooms, view, pinned, status, search, sort, manualRank])
   const reordering = useRoomReorder(filtered.map(item => item.live_id), (source, target) => {
     if (source === target || !filtered.some(item => item.live_id === source) || !filtered.some(item => item.live_id === target)) return
     setRoomOrder(reorderVisibleRooms(orderedIds, filtered.map(item => item.live_id), source, target)); setSort('manual')
@@ -117,6 +120,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const attention = rooms.filter(needsAttention), enabled = rooms.filter(item => item.enabled)
   const connectedCount = rooms.filter(item => item.enabled && streams[item.live_id]?.connected).length
   const selectedVisible = filtered.filter(item => selected.includes(item.live_id)).length
+  const selectedRooms = rooms.filter(item => selected.includes(item.live_id))
   const changeSelection = (id: string, checked: boolean) => setSelected(previous => checked ? [...new Set([...previous, id])] : previous.filter(value => value !== id))
   const togglePin = (id: string) => setPinned(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id])
   const operate = async (targets: Room[], enable: boolean) => {
@@ -128,7 +132,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
     try {
       for (const item of changed) { try { await request(enable ? '/rooms' : `/rooms/${item.live_id}`, { method: enable ? 'POST' : 'DELETE', body: enable ? JSON.stringify({ live_id: item.live_id }) : undefined }) } catch (error) { failures.push(`${roomName(item)}：${(error as Error).message}`) } }
       const succeeded = changed.length - failures.length
-      if (succeeded) Toast.toast.success(`已${enable ? '启动' : '移除'} ${succeeded} 个直播间${enable ? '' : '监控'}`, { timeout: 5000 })
+      if (succeeded) Toast.toast.success(`已${enable ? '启动' : '暂停'} ${succeeded} 个直播间监控`, { timeout: 5000 })
       if (failures.length) Toast.toast.danger(`${failures.length} 个直播间操作失败`, { description: failures.join('；'), timeout: 0 })
       await load()
     } finally { setBusy(false) }
@@ -184,7 +188,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
         </Button><Tooltip.Content placement="right">{item.name}</Tooltip.Content></Tooltip>)}
       </nav>
       <div className="rail-bottom">
-        <div className="sidebar-service"><span className={'status-dot ' + (serviceReady ? 'good' : 'warn')} /><span>{enabled.length} 间已启用监控</span></div>
+        <div className="sidebar-service"><span className={'status-dot ' + (serviceReady ? 'good' : 'warn')} /><span>{enabled.length}/{rooms.length} 间监控中</span></div>
         <div className="sidebar-user"><Tooltip delay={250}><Button variant="ghost" className="user-profile-button" aria-label="个人信息" onPress={() => { closeMobileSidebar(); onAccount() }}><HeroAvatar className="workspace-avatar"><HeroAvatar.Fallback>{Array.from(user.displayName)[0]}</HeroAvatar.Fallback></HeroAvatar><span><strong>{user.displayName}</strong><small>{user.role}</small></span></Button><Tooltip.Content placement="right">个人信息</Tooltip.Content></Tooltip></div>
       </div>
     </aside>
@@ -209,7 +213,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
       {view === 'archive' ? <MessageArchive rooms={rooms} initialUser={archiveUser} onRoom={focusRoom} /> : <main className={'console-grid ' + (view === 'room' ? 'room-detail-view' : 'monitor-overview')}>
         {view !== 'room' && <section className="rooms-panel" aria-label="直播间监控">
           <div className="panel-heading">
-            <div><h2>直播间 <span className="count-label">{filtered.length}</span></h2><p>{view === 'attention' ? '连接失败、重连中或消息积压' : '管理监控中的直播间，点击卡片查看数据'}</p></div>
+            <div><h2>直播间 <span className="count-label">{filtered.length}</span></h2><p>{view === 'attention' ? '连接失败、重连中或消息积压' : '管理直播间监控，点击卡片查看数据'}</p></div>
           </div>
           <div className="rooms-tools">
             <StudioSearch label="搜索直播间" placeholder="搜索主播、房间号" value={search} onChange={setSearch} clearLabel="清空房间搜索" />
@@ -219,7 +223,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
             </div>
             <div className={'selection-bar ' + (selected.length ? 'has-selection' : '')}>
               <div><Check label="选择当前筛选的全部直播间" selected={filtered.length > 0 && selectedVisible === filtered.length} mixed={selectedVisible > 0 && selectedVisible < filtered.length} onChange={checked => setSelected(previous => checked ? [...new Set([...previous, ...filtered.map(item => item.live_id)])] : previous.filter(id => !filtered.some(item => item.live_id === id)))} /><span>{selected.length ? '已选 ' + selected.length + ' 间' : '批量选择'}</span></div>
-              <div><Button size="sm" variant="ghost" isDisabled={busy || !selected.length} onPress={() => void operate(rooms.filter(item => selected.includes(item.live_id)), false)} aria-label="批量移除监控"><DeleteOutlined />移除监控</Button>{selected.length > 0 && <Button variant="ghost" size="sm" isIconOnly aria-label="取消选择" onPress={() => setSelected([])}><CloseOutlined /></Button>}</div>
+              <div><Button size="sm" variant="ghost" isDisabled={busy || !selectedRooms.some(item => !item.enabled)} onPress={() => void operate(selectedRooms, true)} aria-label="批量启动监控"><PlayCircleOutlined />启动监控</Button><Button size="sm" variant="ghost" isDisabled={busy || !selectedRooms.some(item => item.enabled)} onPress={() => void operate(selectedRooms, false)} aria-label="批量暂停监控"><PauseOutlined />暂停监控</Button>{selected.length > 0 && <Button variant="ghost" size="sm" isIconOnly aria-label="取消选择" onPress={() => setSelected([])}><CloseOutlined /></Button>}</div>
             </div>
             {selected.length > selectedVisible && <p className="selection-note">含 {selected.length - selectedVisible} 间被筛选隐藏的已选房间</p>}
           </div>
@@ -228,7 +232,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
           <span className="sr-only" role="status">{reorderNotice}</span>
           <div className="room-list" ref={reordering.listRef}>
             {!loaded && <div className="empty-state"><Spinner size="md" aria-label="正在加载直播间" /><strong>正在加载直播间</strong></div>}
-            {filtered.map(item => <Card key={item.live_id} data-room-id={item.live_id} className={'channel-card ' + (pinned.includes(item.live_id) ? 'is-pinned ' : '') + (needsAttention(item) ? 'needs-attention ' : '') + (reordering.drag?.source === item.live_id ? 'is-dragging ' : '') + (reordering.drag?.target === item.live_id && reordering.drag.source !== item.live_id ? reordering.drag.after ? 'drop-after' : 'drop-before' : '')}>
+            {filtered.map(item => <Card key={item.live_id} data-room-id={item.live_id} className={'channel-card ' + (!item.enabled ? 'is-stopped ' : '') + (pinned.includes(item.live_id) ? 'is-pinned ' : '') + (needsAttention(item) ? 'needs-attention ' : '') + (reordering.drag?.source === item.live_id ? 'is-dragging ' : '') + (reordering.drag?.target === item.live_id && reordering.drag.source !== item.live_id ? reordering.drag.after ? 'drop-after' : 'drop-before' : '')}>
               <Button variant="ghost" className="channel-select-hitarea" aria-label={'查看 ' + roomName(item) + ' 的消息'} onPress={() => focusRoom(item.live_id)}><span className="sr-only">查看 {roomName(item)} 的数据</span></Button>
               <div className="channel-card-top"><Check label={'选择 ' + roomName(item)} selected={selected.includes(item.live_id)} onChange={checked => changeSelection(item.live_id, checked)} /><Status room={item} /><Button isIconOnly size="sm" variant="ghost" className={'pin-button ' + (pinned.includes(item.live_id) ? 'is-pinned' : '')} aria-label={(pinned.includes(item.live_id) ? '取消重点关注 ' : '重点关注 ') + roomName(item)} aria-pressed={pinned.includes(item.live_id)} onPress={() => togglePin(item.live_id)}>{pinned.includes(item.live_id) ? <PushpinFilled /> : <PushpinOutlined />}</Button><RoomDragHandle name={roomName(item)} handlers={reordering.handleProps(item.live_id)} /></div>
               <div className="channel-profile"><Avatar key={item.metadata?.anchor.avatar_url || item.live_id} room={item} /><span><strong>{roomName(item)}</strong><small>{item.live_id}</small></span></div>
@@ -238,10 +242,10 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
                 <div><span>{item.stats.gift_quantity == null ? '礼物组' : '礼物'}</span><strong>{number(item.stats.gift_quantity ?? item.stats.gift)}</strong></div>
               </div>
               {needsAttention(item) && <div className="channel-last-message"><WarningOutlined /><span>{item.detail || '连接异常，请检查采集状态'}</span></div>}
-              <div className="channel-footer"><span><i className={'status-dot ' + (streams[item.live_id]?.connected ? 'good' : 'warn')} />{streams[item.live_id]?.connected ? '已同步' : '正在同步'}</span><Button variant="ghost" size="sm" onPress={() => openSettings(item.live_id)} aria-label={'配置 ' + roomName(item)}><SettingOutlined />配置</Button><Button variant="ghost" size="sm" className="remove-monitor" aria-label={'移除监控 ' + roomName(item)} isDisabled={busy} onPress={() => void operate([item], false)}><DeleteOutlined />移除监控</Button></div>
+              <div className="channel-footer"><span><i className={'status-dot ' + (item.enabled ? streams[item.live_id]?.connected ? 'good' : 'warn' : '')} />{!item.enabled ? '已暂停' : streams[item.live_id]?.connected ? '已同步' : '正在同步'}</span><Button variant="ghost" size="sm" className={'toggle-monitor ' + (item.enabled ? 'pause' : 'start')} aria-label={(item.enabled ? '暂停 ' : '启动 ') + roomName(item) + ' 监控'} isDisabled={busy} onPress={() => void operate([item], !item.enabled)}>{item.enabled ? <><PauseOutlined />暂停</> : <><PlayCircleOutlined />启动</>}</Button><Button variant="ghost" size="sm" onPress={() => openSettings(item.live_id)} aria-label={'配置 ' + roomName(item)}><SettingOutlined />配置</Button></div>
             </Card>)}
-            {loaded && !filtered.length && <EmptyState className="empty-state"><SearchOutlined /><strong>{!enabled.length ? '开始监控第一个直播间' : view === 'attention' ? '暂无采集故障' : '没有匹配的直播间'}</strong><p>{!enabled.length ? '添加抖音直播间号或链接，接收实时互动。' : view === 'attention' ? '此处显示连接失败、正在重连或消息积压的房间；等待开播属于正常状态。' : '调整筛选条件，或返回全部直播间。'}</p><Button size="sm" variant="secondary" onPress={() => enabled.length ? resetFilters() : setAddOpen(true)}>{enabled.length ? '查看全部直播间' : '添加直播间'}</Button></EmptyState>}
-            {loaded && enabled.length > 0 && <Button variant="ghost" className="add-channel" onPress={() => setAddOpen(true)}><PlusOutlined />添加更多直播间</Button>}
+            {loaded && !filtered.length && <EmptyState className="empty-state"><SearchOutlined /><strong>{!rooms.length ? '开始监控第一个直播间' : view === 'attention' ? '暂无采集故障' : '没有匹配的直播间'}</strong><p>{!rooms.length ? '添加抖音直播间号或链接，接收实时互动。' : view === 'attention' ? '此处显示连接失败、正在重连或消息积压的房间；等待开播属于正常状态。' : '调整筛选条件，或返回全部直播间。'}</p><Button size="sm" variant="secondary" onPress={() => rooms.length ? resetFilters() : setAddOpen(true)}>{rooms.length ? '查看全部直播间' : '添加直播间'}</Button></EmptyState>}
+            {loaded && rooms.length > 0 && <Button variant="ghost" className="add-channel" onPress={() => setAddOpen(true)}><PlusOutlined />添加更多直播间</Button>}
           </div>
         </section>}
 
@@ -295,15 +299,15 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
             <div className="inspector-section"><h4>房间数据</h4><dl className="detail-stats"><div><dt>直播间号</dt><dd>{room.live_id}</dd></div><div><dt>累计进场</dt><dd>{number(room.stats.enter)}</dd></div><div><dt>累计点赞</dt><dd>{number(room.stats.like)}</dd></div><div><dt>上次观测在线</dt><dd>{number(room.stats.online)} 人</dd></div>{room.metadata?.anchor.follower_count != null && <div><dt>主播粉丝</dt><dd>{number(room.metadata.anchor.follower_count)}</dd></div>}</dl></div>
             <div className="inspector-section"><h4>采集状态</h4><div className="connection-detail"><span className={'status-dot ' + (activeStream?.connected ? 'good' : 'warn')} /><span>{activeStream?.connected ? '消息连接正常' : '消息连接正在恢复'}</span></div><dl className="detail-stats"><div><dt>最近资料检查</dt><dd>{room.metadata?.checked_at_ms ? time(room.metadata.checked_at_ms) : '等待检查'}</dd></div>{room.metadata?.live_started_at_ms ? <div><dt>最近开播</dt><dd>{new Date(room.metadata.live_started_at_ms).toLocaleString('zh-CN')}</dd></div> : null}</dl>{room.detail && <p className={'detail-note ' + (needsAttention(room) ? 'warning' : '')}>{room.detail}</p>}{activeStream?.error && <p className="detail-note warning" role="alert">{activeStream.error}</p>}</div>
             <div className="inspector-section"><h4>采集身份</h4><CollectorIdentity status={health?.collector.room_auth?.[active]?.auth_status} /><Button fullWidth variant="secondary" className="identity-config-button" onPress={() => openSettings(room.live_id)}><SettingOutlined />配置此房间 Cookie</Button></div>
-            <Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([room], !room.enabled)}>{room.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{room.enabled ? '移除此房间监控' : '启动此房间采集'}</Button>
+            <Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([room], !room.enabled)}>{room.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{room.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button>
           </div> : <EmptyState className="empty-state"><UserOutlined /><strong>还未选择直播间</strong><p>添加房间后，可在这里查看主播资料和采集状态。</p></EmptyState>}
     </div></Dialog>
     <Dialog open={addOpen} onChange={value => { if (!busy) setAddOpen(value) }} title="添加直播间" footer={<><Button variant="secondary" isDisabled={busy} onPress={() => setAddOpen(false)}>取消</Button><Button isDisabled={busy || !roomInput.trim()} onPress={() => void addRooms()}><PlusOutlined />{busy ? '正在添加…' : '添加并开始监控'}</Button></>}>
       <div className="dialog-intro"><div className="dialog-symbol"><PlusOutlined /></div><p>将需要关注的直播间加入工作台。<br />支持批量添加，每行输入一个房间号或链接。</p></div>
       <Label className="field-label" htmlFor="room-addresses">直播间地址</Label><TextArea id="room-addresses" rows={6} value={roomInput} onChange={event => setRoomInput(event.target.value)} placeholder={'输入房间号，例如 123456789\n或 https://live.douyin.com/123456789'} disabled={busy} />
-      <div className="dialog-hint"><CheckCircleOutlined /><span>每次最多 50 间，已监控房间自动跳过，已移除房间重新启用。新房间使用独立游客身份，可在配置中添加 Cookie。</span></div>{addError && <InlineFeedback>{addError}</InlineFeedback>}
+      <div className="dialog-hint"><CheckCircleOutlined /><span>每次最多 50 间，已监控房间自动跳过，已暂停房间重新启动。新房间使用独立游客身份，可在配置中添加 Cookie。</span></div>{addError && <InlineFeedback>{addError}</InlineFeedback>}
     </Dialog>
-    <Dialog open={settingsOpen && !!settingsRoom} onChange={setSettingsOpen} title={settingsRoom ? roomName(settingsRoom) + ' · 采集配置' : '采集配置'}>{settingsRoom && <CookieSettings liveId={settingsRoom.live_id} onSaved={() => void load()} />}</Dialog>
+    <Dialog open={settingsOpen && !!settingsRoom} onChange={setSettingsOpen} title={settingsRoom ? roomName(settingsRoom) + ' · 采集配置' : '采集配置'}>{settingsRoom && <><CookieSettings liveId={settingsRoom.live_id} onSaved={() => void load()} /><Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([settingsRoom], !settingsRoom.enabled)}>{settingsRoom.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{settingsRoom.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button></>}</Dialog>
     <Dialog open={runtimeOpen} onChange={setRuntimeOpen} title="服务运行状态">
       <p className="dialog-description">查看采集、存储及推送服务的当前状态。</p>
       <div className="health-grid">{[['采集服务', health?.collector.online], [health?.transport === 'local' ? '本地投递' : '消息队列', health?.rabbitmq], ['数据存储', health?.database], [health?.cache_backend === 'sqlite' ? '本地统计' : '统计缓存', health?.redis]].map(([name, ok]) => <div key={String(name)}><DatabaseOutlined /><span>{name}</span><Chip size="sm" color={ok ? 'success' : 'warning'}>{ok ? '在线' : health ? name === '统计缓存' ? '回源模式' : '不可用' : '未知'}</Chip></div>)}</div>

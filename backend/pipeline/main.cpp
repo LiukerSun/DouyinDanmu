@@ -269,6 +269,10 @@ public:
                     if(current.row()) {
                         auto old=json::parse(current.str(0)); new_display=false;
                         previous=old.at("gift_count").get<int64_t>(); finalized=old.value("gift_final",false);
+                        // Only an established display group may supply an omitted price.
+                        if((!e.contains("gift_unit_price") || e.at("gift_unit_price").is_null()) &&
+                           old.contains("gift_unit_price") && !old.at("gift_unit_price").is_null())
+                            e["gift_unit_price"]=old.at("gift_unit_price");
                         // Late progress frames must not roll back richer terminal data.
                         if(observed<previous || (finalized&&!e.value("gift_final",false))) {
                             for(const auto* field:{"user_name","user_level","fans_club","gift_name","content","timestamp"}) {

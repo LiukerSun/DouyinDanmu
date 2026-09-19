@@ -321,6 +321,91 @@ void legacy_database_migrates_once() {
     }
 }
 
+void gift_price_survives_sparse_progress() {
+    TemporaryDatabase database;
+    Store store;
+    store.target(room_a, "douyin", true);
+    GiftMessage message;
+    message.set_gift_id(4095);
+    message.set_group_id(42);
+    message.set_repeat_count(1);
+    message.mutable_to_user()->set_id(100);
+    message.mutable_gift()->set_combo(true);
+    message.mutable_gift()->set_name("小心心");
+    message.mutable_gift()->set_diamondcount(10);
+    auto first = gift("priced-first", "priced-first", 1);
+    gift_fields(first, message, "internal-" + room_a);
+    deliver(store, room_a, first);
+
+    message.clear_gift();
+    message.set_repeat_count(2);
+    auto next = gift("priced-sparse", "priced-sparse", 2);
+    gift_fields(next, message, "internal-" + room_a);
+    check(next.at("gift_unit_price").is_null(), "Omitted gift details must parse as an unknown price");
+    deliver(store, room_a, next);
+    check(display_event(store.snapshot(room_a), first.at("display_id")).at("gift_unit_price") == 10,
+          "Sparse combo progress must retain the known unit price in the snapshot");
+    check(store.events(room_a, 0).back().at("gift_unit_price") == 10,
+          "Sparse combo progress must publish the known unit price to journal consumers");
+
+    message.mutable_gift()->set_combo(true);
+    auto no_price = gift("priced-no-price", "priced-no-price", 3);
+    gift_fields(no_price, message, "internal-" + room_a);
+    deliver(store, room_a, no_price);
+    check(display_event(store.snapshot(room_a), first.at("display_id")).at("gift_unit_price") == 10,
+          "An identified combo without a price must also preserve the known price");
+
+    message.mutable_gift()->set_diamondcount(0);
+    auto free = gift("priced-zero", "priced-zero", 3);
+    gift_fields(free, message, "internal-" + room_a);
+    deliver(store, room_a, free);
+    check(display_event(store.snapshot(room_a), first.at("display_id")).at("gift_unit_price") == 0,
+          "An explicit zero price must replace the old known price");
+    message.clear_gift();
+    for (int component = 0; component < 5; ++component) {
+        auto different = message;
+        const auto live = component == 0 ? room_b : room_a;
+        store.target(live, "douyin", true);
+        auto isolated = gift("unknown-price-" + std::to_string(component),
+                             "unknown-price-" + std::to_string(component), 2);
+        if (component == 1) isolated["user_id"] = "another-sender";
+        if (component == 2) different.set_gift_id(4096);
+        if (component == 3) different.set_group_id(43);
+        if (component == 4) different.mutable_to_user()->set_id(101);
+        gift_fields(isolated, different, "internal-" + live);
+        deliver(store, live, isolated);
+        check(display_event(store.snapshot(live), isolated.at("display_id")).at("gift_unit_price").is_null(),
+              "A different room, sender, gift, group or recipient must not inherit another price");
+        check(store.events(live, 0).back().at("gift_unit_price").is_null(),
+              "The replay journal must preserve unknown prices as null");
+    }
+
+    // Reopen the persisted projection before a terminal frame with no gift details.
+    Store reopened;
+    message.set_repeat_count(4);
+    message.set_repeat_end(1);
+    auto terminal = gift("priced-terminal", "priced-terminal", 4);
+    gift_fields(terminal, message, "internal-" + room_a);
+    deliver(reopened, room_a, terminal);
+    const auto final = display_event(reopened.snapshot(room_a), first.at("display_id"));
+    check(final.at("gift_unit_price") == 0 && final.at("gift_final") == true && final.at("gift_count") == 4,
+          "A known zero price must survive persisted sparse terminal progress");
+
+    auto other = message;
+    other.mutable_to_user()->set_id(102);
+    other.mutable_gift()->set_combo(true);
+    other.mutable_gift()->set_diamondcount(20);
+    auto sibling = gift("priced-sibling", "priced-sibling", 4);
+    gift_fields(sibling, other, "internal-" + room_a);
+    deliver(reopened, room_a, sibling);
+    message.clear_to_user();
+    auto ambiguous = gift("price-ambiguous", "price-ambiguous", 4);
+    gift_fields(ambiguous, message, "internal-" + room_a);
+    deliver(reopened, room_a, ambiguous);
+    check(display_event(reopened.snapshot(room_a), ambiguous.at("display_id")).at("gift_unit_price").is_null(),
+          "Missing recipient with multiple compatible combos must not guess a price");
+}
+
 void sparse_progress_matches_only_an_unambiguous_recipient() {
     TemporaryDatabase database;
     Store store;
@@ -655,6 +740,7 @@ int main() {
         gift_progress_persists_once_per_group();
         legacy_database_migrates_once();
         sparse_progress_matches_only_an_unambiguous_recipient();
+        gift_price_survives_sparse_progress();
         std::cout << "gift_store tests passed: aggregation, idempotency, replay, restart and room isolation\n";
         return 0;
     } catch (const std::exception& error) {

@@ -84,6 +84,19 @@ const React = require('react');
 const {renderToStaticMarkup} = require('react-dom/server');
 const PipelineMessage = loadTs('components/PipelineMessage.tsx').default;
 const render = value => renderToStaticMarkup(React.createElement(PipelineMessage, {event: value}));
+const pricedGift = render(event({content: 'PK宝箱', gift_count: 1, gift_unit_price: 600, gift_combo: false, gift_final: true}));
+assert.ok(pricedGift.includes('PK宝箱') && pricedGift.includes('× 1') && pricedGift.includes('600 钻石'), '已知单价的单次礼物必须显示钻石价值');
+const pricedCombo = mergeMessages([], [
+  event({gift_unit_price: 600}),
+  event({seq: '2', event_id: 'combo-progress', gift_count: 3, gift_unit_price: 600}),
+  event({seq: '3', event_id: 'combo-final', gift_count: 3, gift_unit_price: 600, gift_final: true}),
+], 'room-a');
+assert.equal(pricedCombo.length, 1);
+const pricedComboMarkup = render(pricedCombo[0]);
+assert.ok(pricedComboMarkup.includes('× 3') && pricedComboMarkup.includes('1,800 钻石') && pricedComboMarkup.includes('连送完成'), '连送价值使用最终累计数量，不再累加进度帧');
+for (const price of [undefined, null, -1, NaN, Infinity]) assert.ok(!render(event({gift_unit_price: price})).includes('gift-price'), '未知或无效价格不得显示为钻石价值');
+assert.ok(render(event({gift_unit_price: 0})).includes('0 钻石'), '明确的零价格必须与未知价格区分');
+console.log('PASS: known gift values, cumulative combo totals, unknown prices and explicit zero prices');
 const unknown = render(event({type: 'chat', content: '你好[色]'}));
 assert.ok(unknown.includes('9007199254740993'), '完整 UID 不得截断或丢精度');
 assert.ok(unknown.includes('财富等级未知'), '缺失财富等级不得展示 0 级');

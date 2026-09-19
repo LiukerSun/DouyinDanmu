@@ -9,12 +9,13 @@ const protobuf = require('protobufjs');
 
 const methods = { WebcastChatMessage: 'ChatMessage', WebcastMemberMessage: 'MemberMessage', WebcastGiftMessage: 'GiftMessage', WebcastLikeMessage: 'LikeMessage', WebcastSocialMessage: 'SocialMessage' };
 const own = (object, field) => object != null && Object.hasOwn(object, field);
+const fanFields = ['name', 'level', 'status', 'anchor_id', 'member'];
+const conflictsWithFans = (fans, supplied) => fanFields.some(field => fans?.[field] != null && fans[field] !== '' && supplied[field] != null && fans[field] !== supplied[field]);
 function missingFans(body, supplied) {
   const fans = { ...(body.fans_club || {}) };
-  const fields = ['name', 'level', 'status', 'anchor_id', 'member'];
-  if (fields.some(field => fans[field] != null && fans[field] !== '' && supplied[field] != null && fans[field] !== supplied[field])) return null;
+  if (conflictsWithFans(fans, supplied)) return null;
   let changed = false;
-  for (const field of fields) {
+  for (const field of fanFields) {
     if (supplied[field] == null || (fans[field] != null && fans[field] !== '')) continue;
     fans[field] = supplied[field]; changed = true;
     if (field === 'member') fans.member_inferred = true;
@@ -28,9 +29,12 @@ async function repair({ database, capture, proto, apply = false }) {
   const fanField = root.lookupType('User').fieldsById[24].name;
   const db = new DatabaseSync(database, { readOnly: !apply });
   db.exec('PRAGMA busy_timeout=5000');
-  const result = { frames: 0, decodeErrors: 0, events: 0, views: 0, users: [], backup: null, applied: apply };
+  const result = { frames: 0, decodeErrors: 0, events: 0, views: 0, analytics: 0, users: [], backup: null, applied: apply };
   const candidates = new Map();
   try {
+    // Older databases predate this projection; their next backend migration
+    // will derive it from the repaired journal instead.
+    const hasAnalytics = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='analytics_events'").get();
     for (const file of fs.readdirSync(capture).filter(file => file.endsWith('.bin')).sort()) {
       try {
         const frame = Envelope.decode(fs.readFileSync(path.join(capture, file)));
@@ -67,10 +71,10 @@ async function repair({ database, capture, proto, apply = false }) {
     const viewers = new Set();
     for (const candidate of candidates.values()) {
       if (candidate.conflict) continue;
-      const row = db.prepare('SELECT id,body FROM events WHERE event_id=? AND live_id=?').get(candidate.id, candidate.live);
+      const row = db.prepare('SELECT CAST(id AS TEXT) AS id,body FROM events WHERE event_id=? AND live_id=?').get(candidate.id, candidate.live);
       if (!row) continue;
       const body = JSON.parse(row.body);
-      if (String(body.user_id) !== candidate.uid) continue;
+      if (String(body.user_id) !== candidate.uid || conflictsWithFans(body.fans_club, candidate.fans)) continue;
       const repaired = missingFans(body, candidate.fans);
       if (repaired) {
         result.events++; viewers.add(body.user_name);
@@ -84,6 +88,18 @@ async function repair({ database, capture, proto, apply = false }) {
         if (!patched) continue;
         result.views++; viewers.add(body.user_name);
         if (apply) db.prepare('UPDATE message_views SET body=? WHERE live_id=? AND display_id=?').run(JSON.stringify(patched), candidate.live, view.display_id);
+      }
+      if (hasAnalytics) {
+        // Repair only the profile of this exact fact, even when an earlier run
+        // already filled the journal. Never replay quantity/value projections.
+        const identity = [row.id, candidate.id, candidate.live, candidate.uid];
+        const fact = db.prepare('SELECT fans_club FROM analytics_events WHERE seq=? AND event_id=? AND live_id=? AND user_id=?').get(...identity);
+        if (!fact) continue;
+        const patched = missingFans({ fans_club: JSON.parse(fact.fans_club) }, candidate.fans);
+        if (!patched) continue;
+        result.analytics++; viewers.add(body.user_name);
+        if (apply) db.prepare('UPDATE analytics_events SET fans_club=? WHERE seq=? AND event_id=? AND live_id=? AND user_id=?')
+          .run(JSON.stringify(patched.fans_club), ...identity);
       }
     }
     if (apply) db.exec('COMMIT');

@@ -8,7 +8,7 @@ export type Room = {
     anchor: { nickname: string; avatar_url: string; display_id: string; signature: string; follower_count?: number | null }
   }
 }
-export type Health = { frames: number; events: number; quarantine: number; rabbitmq: boolean; redis: boolean; database: boolean; transport?: 'local'; cache_backend?: 'sqlite'; collector: { online: boolean; spool_bytes?: number; room_auth?: Record<string, { auth_status: CollectorAuthStatus }> } }
+export type Health = { frames: number; events: number; quarantine: number; rabbitmq: boolean; redis: boolean; database: boolean; transport?: 'local'; cache_backend?: 'sqlite'; collector: { online: boolean; spool_bytes?: number; spool_quarantine?: { files: number; bytes: number }; room_auth?: Record<string, { auth_status: CollectorAuthStatus }> } }
 export const statusLabels: Record<string, string> = { connecting: '连接中', collecting: '采集中', reconnecting: '重连中', waiting_live: '等待开播', stopped: '已停止', failed: '连接失败', backpressured: '缓冲已满' }
 export const formatNumber = (value: number) => value.toLocaleString('zh-CN')
 export const roomName = (room: Room) => room.metadata?.anchor.nickname || room.live_id

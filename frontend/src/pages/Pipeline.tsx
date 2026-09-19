@@ -106,8 +106,9 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
     if (status === 'live' && !isLive(item)) return false
     return `${roomName(item)} ${item.live_id} ${item.metadata?.title || ''}`.toLowerCase().includes(search.trim().toLowerCase())
   }).sort((a, b) => {
+    if (sort === 'manual') return manualRank.get(a.live_id)! - manualRank.get(b.live_id)!
     if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
-    return sort === 'manual' ? (manualRank.get(a.live_id)! - manualRank.get(b.live_id)!) : sort === 'online' ? ((isLive(b) && b.enabled ? b.stats.online : 0) - (isLive(a) && a.enabled ? a.stats.online : 0)) : sort === 'chat' ? b.stats.chat - a.stats.chat : Number(pinned.includes(b.live_id)) - Number(pinned.includes(a.live_id)) || Number(needsAttention(b)) - Number(needsAttention(a))
+    return sort === 'online' ? ((isLive(b) && b.enabled ? b.stats.online : 0) - (isLive(a) && a.enabled ? a.stats.online : 0)) : sort === 'chat' ? b.stats.chat - a.stats.chat : Number(pinned.includes(b.live_id)) - Number(pinned.includes(a.live_id)) || Number(needsAttention(b)) - Number(needsAttention(a))
   }), [rooms, view, pinned, status, search, sort, manualRank])
   const reordering = useRoomReorder(filtered.map(item => item.live_id), (source, target) => {
     if (source === target || !filtered.some(item => item.live_id === source) || !filtered.some(item => item.live_id === target)) return
@@ -210,7 +211,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
         {loaded && !serviceError && !serviceReady && <InlineFeedback action={<Button size="sm" variant="ghost" onPress={() => setRuntimeOpen(true)}>检查服务</Button>}>{!health ? '暂时无法获取服务状态，正在重试。' : '采集或存储服务异常，实时数据可能延迟。'}</InlineFeedback>}
       </div>
 
-      {view === 'archive' ? <MessageArchive rooms={rooms} initialUser={archiveUser} onRoom={focusRoom} /> : <main className={'console-grid ' + (view === 'room' ? 'room-detail-view' : 'monitor-overview')}>
+      {view === 'archive' ? <MessageArchive rooms={rooms} user={archiveUser} onUserChange={setArchiveUser} onRoom={focusRoom} /> : <main className={'console-grid ' + (view === 'room' ? 'room-detail-view' : 'monitor-overview')}>
         {view !== 'room' && <section className="rooms-panel" aria-label="直播间监控">
           <div className="panel-heading">
             <div><h2>直播间 <span className="count-label">{filtered.length}</span></h2><p>{view === 'attention' ? '连接失败、重连中或消息积压' : '管理直播间监控，点击卡片查看数据'}</p></div>
@@ -310,6 +311,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
     <Dialog open={settingsOpen && !!settingsRoom} onChange={setSettingsOpen} title={settingsRoom ? roomName(settingsRoom) + ' · 采集配置' : '采集配置'}>{settingsRoom && <><CookieSettings liveId={settingsRoom.live_id} onSaved={() => void load()} /><Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([settingsRoom], !settingsRoom.enabled)}>{settingsRoom.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{settingsRoom.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button></>}</Dialog>
     <Dialog open={runtimeOpen} onChange={setRuntimeOpen} title="服务运行状态">
       <p className="dialog-description">查看采集、存储及推送服务的当前状态。</p>
+      {!!health?.collector.spool_quarantine?.files && <InlineFeedback>已保留 {number(health.collector.spool_quarantine.files)} 个未完整写入的采集文件（{(health.collector.spool_quarantine.bytes / 1024).toFixed(1)} KB），可在维护时备份并检查。</InlineFeedback>}
       <div className="health-grid">{[['采集服务', health?.collector.online], [health?.transport === 'local' ? '本地投递' : '消息队列', health?.rabbitmq], ['数据存储', health?.database], [health?.cache_backend === 'sqlite' ? '本地统计' : '统计缓存', health?.redis]].map(([name, ok]) => <div key={String(name)}><DatabaseOutlined /><span>{name}</span><Chip size="sm" color={ok ? 'success' : 'warning'}>{ok ? '在线' : health ? name === '统计缓存' ? '回源模式' : '不可用' : '未知'}</Chip></div>)}</div>
       <dl className="detail-stats"><div><dt>已处理原始帧</dt><dd>{health ? number(health.frames) : '—'}</dd></div><div><dt>已持久化事件</dt><dd>{health ? number(health.events) : '—'}</dd></div><div><dt>待处理隔离</dt><dd>{health ? number(health.quarantine) : '—'}</dd></div><div><dt>本地待确认日志</dt><dd>{health ? ((health.collector.spool_bytes || 0) / 1024).toFixed(1) + ' KB' : '—'}</dd></div><div><dt>推送连接</dt><dd>{connectedCount} / {enabled.length} 间</dd></div></dl>
       <Button variant="secondary" onPress={() => void load()}><ReloadOutlined />刷新状态</Button>

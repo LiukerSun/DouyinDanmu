@@ -17,14 +17,16 @@ type Filters = { room: string; type: string; q: string; wealth: string; fans: st
 const defaults: Filters = { room: '', type: '', q: '', wealth: '', fans: '', view: 'events' }
 const levelOptions = (bands: readonly { min: number; label: string }[]) => [{ id: '', label: '全部等级' }, ...bands.map(b => ({ id: String(b.min), label: 'Lv.' + b.label })), { id: 'unknown', label: '等级未提供' }]
 
-export default function MessageArchive({ rooms, initialUser, onRoom }: { rooms: Room[]; initialUser: ArchiveUser | null; onRoom: (id: string) => void }) {
+export default function MessageArchive({ rooms, user, onUserChange, onRoom }: { rooms: Room[]; user: ArchiveUser | null; onUserChange: (user: ArchiveUser | null) => void; onRoom: (id: string) => void }) {
   const [inspectedEvent, setInspectedEvent] = useState<PipelineEvent | null>(null)
   const [filters, setFilters] = useState<Filters>(defaults)
-  const [user, setUser] = useState(initialUser)
   const [cursors, setCursors] = useState<string[]>([''])
   const [result, setResult] = useState<Result | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   const list = useRef<HTMLDivElement>(null)
+  // Navigation and message actions share the same user scope. A new scope
+  // starts at the first page, including when the parent clears it from the rail.
+  useEffect(() => { setCursors(['']) }, [user?.id])
   const query = useMemo(() => {
     const params = new URLSearchParams({ limit: '50', view: filters.view })
     if (filters.room) params.set('room', filters.room)
@@ -53,8 +55,8 @@ export default function MessageArchive({ rooms, initialUser, onRoom }: { rooms: 
     return () => { clearTimeout(timer); controller.abort() }
   }, [query, revision])
   const change = (key: keyof Filters, value: string) => { setFilters(previous => ({ ...previous, [key]: value })); setCursors(['']) }
-  const clear = () => { setFilters(defaults); setUser(null); setCursors(['']) }
-  const inspect = (event: PipelineEvent) => { setUser({ id: event.user_id, name: event.user_name }); setFilters(defaults); setCursors(['']) }
+  const clear = () => { setFilters(defaults); onUserChange(null); setCursors(['']) }
+  const inspect = (event: PipelineEvent) => { onUserChange({ id: event.user_id, name: event.user_name }); setFilters(defaults); setCursors(['']) }
   const hasFilters = user || Object.entries(filters).some(([key, value]) => key !== 'view' && !!value)
   return <main className="archive-panel" aria-label="所有直播间信息汇总">
     <div className="panel-heading"><div><h2><DatabaseOutlined />全部行为记录</h2><p>查询观众互动与直播间通知，按入库时间倒序排列。</p></div><Button size="sm" variant="secondary" isDisabled={loading} onPress={() => { setCursors(['']); setRevision(n => n + 1) }}><ReloadOutlined />刷新记录</Button></div>
@@ -68,7 +70,7 @@ export default function MessageArchive({ rooms, initialUser, onRoom }: { rooms: 
         <StudioSelect label="记录口径" visibleLabel="记录口径" value={filters.view} onChange={v => change('view', v)} options={[{ id: 'events', label: '全部事件（含连送过程）' }, { id: 'merged', label: '合并礼物连送' }]} />
         <Button size="sm" variant="ghost" isDisabled={!hasFilters} onPress={clear}>重置筛选</Button>
       </div>
-      {user && <div className="archive-user-scope"><UserOutlined /><span>正在查看 <strong>{user.name || '该用户'}</strong> 的互动记录</span><Chip size="sm">UID {user.id}</Chip><Button size="sm" variant="ghost" onPress={() => { setUser(null); setCursors(['']) }}>取消用户筛选</Button></div>}
+      {user && <div className="archive-user-scope"><UserOutlined /><span>正在查看 <strong>{user.name || '该用户'}</strong> 的互动记录</span><Chip size="sm">UID {user.id}</Chip><Button size="sm" variant="ghost" onPress={() => { onUserChange(null); setCursors(['']) }}>取消用户筛选</Button></div>}
     </div>
     <div className="archive-result-heading" role="status">{loading ? '正在查询历史记录…' : error ? '查询未完成' : `共 ${result?.total ?? 0} 条记录`}</div>
     {error && <InlineFeedback className="archive-error" action={<Button size="sm" variant="ghost" onPress={() => setRevision(n => n + 1)}>重试</Button>}>{error}</InlineFeedback>}

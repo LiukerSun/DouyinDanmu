@@ -10,6 +10,7 @@
     "test:messages": "node scripts/check-message-stream.cjs",
     "test:rankings": "node scripts/check-room-rankings.cjs",
     "test:workspace-navigation": "node scripts/check-workspace-navigation.cjs",
+    "test:room-removal": "node scripts/check-room-removal.cjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"

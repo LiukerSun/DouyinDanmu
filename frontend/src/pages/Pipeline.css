@@ -92,8 +92,8 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .filter-tabs { display: flex; gap: 0; }
 .console-app .filter-tabs .button { min-height: 28px; height: 28px; min-width: 0; padding: 0 7px; font-size: 12px; border-radius: 5px; white-space: nowrap; }
 .console-app .filter-tabs .is-active { background: #eeeafa; color: #6556bd; }
-.selection-bar { display: flex; justify-content: space-between; align-items: center; gap: 4px; border-top: 1px solid #eeecf5; min-height: 39px; }
-.selection-bar > div { display: flex; gap: 6px; align-items: center; }
+.selection-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px; border-top: 1px solid #eeecf5; min-height: 39px; }
+.selection-bar > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .selection-bar > div > span { color: #81708e; font-size: 12px; white-space: nowrap; }
 .selection-bar.has-selection > div > span { color: #6b57bd; }
 .console-app .selection-bar .button { min-height: 27px; height: 27px; padding: 0 5px; min-width: 0; border-radius: 4px; font-size: 12px; gap: 3px; }
@@ -406,6 +406,9 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .monitor-overview .add-channel { min-height: 180px; height: 100%; }
 .monitor-overview .room-list > .empty-state { grid-column: 1 / -1; }
 .console-app .remove-monitor:hover { color: #b23c4b; background: #fff0f2; }
+.removal-room-list { list-style: none; padding: 0; margin: 16px 0; max-height: 220px; overflow-y: auto; }
+.removal-room-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 8px 0; overflow-wrap: anywhere; }
+.removal-room-list span { color: #857392; }
 .console-app .toggle-monitor.start { color: #2e7d52; }
 .console-app .toggle-monitor.start:hover { color: #1b5e3a; background: #edf7f1; }
 .console-app .toggle-monitor.pause { color: #b8860b; }

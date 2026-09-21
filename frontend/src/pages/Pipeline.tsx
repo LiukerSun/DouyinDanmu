@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Avatar as HeroAvatar, Button, Card, Checkbox, Chip, EmptyState, Label, Link, Modal, TextArea, Toast, Tooltip, Spinner } from '@heroui/react'
-import { AppstoreOutlined, ArrowLeftOutlined, CheckCircleOutlined, CloseOutlined, MenuFoldOutlined, DatabaseOutlined, MessageOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, SearchOutlined, SettingOutlined, ThunderboltFilled, UserOutlined, WarningOutlined, WifiOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, ArrowLeftOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, MenuFoldOutlined, DatabaseOutlined, MessageOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, SearchOutlined, SettingOutlined, ThunderboltFilled, UserOutlined, WarningOutlined, WifiOutlined } from '@ant-design/icons'
 import StudioSelect from '../components/StudioSelect'
 import StudioSearch from '../components/StudioSearch'
 import StudioFilters from '../components/StudioFilters'
@@ -66,7 +66,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const [reorderNotice, setReorderNotice] = useState('')
   const activeKey = 'monitor:active-room:' + user.username
   const [selected, setSelected] = useState<string[]>([]), [active, setActive] = useState(() => { try { return localStorage.getItem(activeKey) || '' } catch { return '' } })
-  useEffect(() => { if (active) { try { localStorage.setItem(activeKey, active) } catch { /* Keep the current room in memory. */ } } }, [activeKey, active])
+  useEffect(() => { try { if (active) localStorage.setItem(activeKey, active); else localStorage.removeItem(activeKey) } catch { /* Keep the current room in memory. */ } }, [activeKey, active])
   const [archiveUser, setArchiveUser] = useState<ArchiveUser | null>(null)
   const [pinned, setPinned] = useState<string[]>(() => { try { const value = JSON.parse(localStorage.getItem('monitor:pinned') || '[]'); return Array.isArray(value) ? value.filter(id => typeof id === 'string') : [] } catch { return [] } })
   const [busy, setBusy] = useState(false)
@@ -74,22 +74,28 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const [colorGuideOpen, setColorGuideOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false), [settingsRoomId, setSettingsRoomId] = useState('')
   const [roomInput, setRoomInput] = useState(''), [addError, setAddError] = useState('')
+  const [removalTargets, setRemovalTargets] = useState<Room[]>([]), [removalError, setRemovalError] = useState('')
   const [inspectedEvent, setInspectedEvent] = useState<PipelineEvent | null>(null)
   const [filter, setFilter] = useState('all'), [keyword, setKeyword] = useState('')
   const [roomContent, setRoomContent] = useState('messages')
   const [frozen, setFrozen] = useState<PipelineEvent[] | null>(null)
   const listRef = useRef<HTMLDivElement>(null), follow = useRef(true), loading = useRef(false)
+  const roomRevision = useRef(0)
   const streams = useRoomStreams(rooms.filter(room => room.enabled || view === 'room' && room.live_id === active).map(room => room.live_id))
   const load = useCallback(async () => {
     if (loading.current) return
     loading.current = true
+    const revision = roomRevision.current
     try {
       const [roomResult, healthResult] = await Promise.allSettled([request<Room[]>('/rooms'), request<Health>('/health')])
-      if (roomResult.status === 'fulfilled') {
-        const next = roomResult.value.filter(room => room.source === 'douyin')
-        setRooms(next); setActive(previous => next.some(room => room.live_id === previous) ? previous : next[0]?.live_id || '')
-        setSelected(previous => previous.filter(id => next.some(room => room.live_id === id))); setServiceError('')
-      } else setServiceError('房间状态更新失败，当前显示上次成功获取的数据。正在自动重试。')
+      // A poll started before a removal must not restore the removed cards.
+      if (revision === roomRevision.current) {
+        if (roomResult.status === 'fulfilled') {
+          const next = roomResult.value.filter(room => room.source === 'douyin')
+          setRooms(next); setActive(previous => next.some(room => room.live_id === previous) ? previous : next[0]?.live_id || '')
+          setSelected(previous => previous.filter(id => next.some(room => room.live_id === id))); setServiceError('')
+        } else setServiceError('房间状态更新失败，当前显示上次成功获取的数据。正在自动重试。')
+      }
       setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
     } finally { setLoaded(true); loading.current = false }
   }, [])
@@ -124,6 +130,35 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const selectedRooms = rooms.filter(item => selected.includes(item.live_id))
   const changeSelection = (id: string, checked: boolean) => setSelected(previous => checked ? [...new Set([...previous, id])] : previous.filter(value => value !== id))
   const togglePin = (id: string) => setPinned(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id])
+  const confirmRemoval = (targets: Room[]) => {
+    if (busy || !targets.length) return
+    setSettingsOpen(false); setProfileOpen(false); setRemovalError(''); setRemovalTargets(targets)
+  }
+  const removeRooms = async () => {
+    if (busy || !removalTargets.length) return
+    setBusy(true); setRemovalError('')
+    const removed = new Set<string>(), failures: string[] = []
+    try {
+      for (const item of removalTargets) {
+        try { await request(`/rooms/${item.live_id}/remove`, { method: 'POST' }); removed.add(item.live_id) }
+        catch (error) { failures.push(`${roomName(item)}：${(error as Error).message}`) }
+      }
+      if (removed.size) {
+        roomRevision.current++
+        setRooms(previous => previous.filter(item => !removed.has(item.live_id)))
+        setSelected(previous => previous.filter(id => !removed.has(id)))
+        setPinned(previous => previous.filter(id => !removed.has(id)))
+        setRoomOrder(previous => previous.filter(id => !removed.has(id)))
+        setActive(previous => removed.has(previous) ? rooms.find(item => !removed.has(item.live_id))?.live_id || '' : previous)
+        if (removed.has(active)) { setFrozen(null); if (view === 'room') setView('overview'); setRoomContent('messages') }
+        if (removed.has(settingsRoomId)) setSettingsRoomId('')
+        Toast.toast.success(`已删除 ${removed.size} 个直播间`, { description: '已停止监控，历史记录和房间配置已保留。', timeout: 5000 })
+      }
+      setRemovalTargets(previous => previous.filter(item => !removed.has(item.live_id)))
+      if (failures.length) setRemovalError(failures.join('；'))
+      await load()
+    } finally { setBusy(false) }
+  }
   const operate = async (targets: Room[], enable: boolean) => {
     if (busy) return
     const changed = targets.filter(item => item.enabled !== enable)
@@ -224,7 +259,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
             </div>
             <div className={'selection-bar ' + (selected.length ? 'has-selection' : '')}>
               <div><Check label="选择当前筛选的全部直播间" selected={filtered.length > 0 && selectedVisible === filtered.length} mixed={selectedVisible > 0 && selectedVisible < filtered.length} onChange={checked => setSelected(previous => checked ? [...new Set([...previous, ...filtered.map(item => item.live_id)])] : previous.filter(id => !filtered.some(item => item.live_id === id)))} /><span>{selected.length ? '已选 ' + selected.length + ' 间' : '批量选择'}</span></div>
-              <div><Button size="sm" variant="ghost" isDisabled={busy || !selectedRooms.some(item => !item.enabled)} onPress={() => void operate(selectedRooms, true)} aria-label="批量启动监控"><PlayCircleOutlined />启动监控</Button><Button size="sm" variant="ghost" isDisabled={busy || !selectedRooms.some(item => item.enabled)} onPress={() => void operate(selectedRooms, false)} aria-label="批量暂停监控"><PauseOutlined />暂停监控</Button>{selected.length > 0 && <Button variant="ghost" size="sm" isIconOnly aria-label="取消选择" onPress={() => setSelected([])}><CloseOutlined /></Button>}</div>
+              <div><Button size="sm" variant="ghost" isDisabled={busy || !selectedRooms.some(item => !item.enabled)} onPress={() => void operate(selectedRooms, true)} aria-label="批量启动监控"><PlayCircleOutlined />启动监控</Button><Button size="sm" variant="ghost" isDisabled={busy || !selectedRooms.some(item => item.enabled)} onPress={() => void operate(selectedRooms, false)} aria-label="批量暂停监控"><PauseOutlined />暂停监控</Button><Button size="sm" variant="ghost" className="remove-monitor" isDisabled={busy || !selectedRooms.length} onPress={() => confirmRemoval(selectedRooms)} aria-label="批量删除直播间"><DeleteOutlined />删除</Button>{selected.length > 0 && <Button variant="ghost" size="sm" isIconOnly aria-label="取消选择" onPress={() => setSelected([])}><CloseOutlined /></Button>}</div>
             </div>
             {selected.length > selectedVisible && <p className="selection-note">含 {selected.length - selectedVisible} 间被筛选隐藏的已选房间</p>}
           </div>
@@ -243,7 +278,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
                 <div><span>{item.stats.gift_quantity == null ? '礼物组' : '礼物'}</span><strong>{number(item.stats.gift_quantity ?? item.stats.gift)}</strong></div>
               </div>
               {needsAttention(item) && <div className="channel-last-message"><WarningOutlined /><span>{item.detail || '连接异常，请检查采集状态'}</span></div>}
-              <div className="channel-footer"><span><i className={'status-dot ' + (item.enabled ? streams[item.live_id]?.connected ? 'good' : 'warn' : '')} />{!item.enabled ? '已暂停' : streams[item.live_id]?.connected ? '已同步' : '正在同步'}</span><Button variant="ghost" size="sm" className={'toggle-monitor ' + (item.enabled ? 'pause' : 'start')} aria-label={(item.enabled ? '暂停 ' : '启动 ') + roomName(item) + ' 监控'} isDisabled={busy} onPress={() => void operate([item], !item.enabled)}>{item.enabled ? <><PauseOutlined />暂停</> : <><PlayCircleOutlined />启动</>}</Button><Button variant="ghost" size="sm" onPress={() => openSettings(item.live_id)} aria-label={'配置 ' + roomName(item)}><SettingOutlined />配置</Button></div>
+              <div className="channel-footer"><span><i className={'status-dot ' + (item.enabled ? streams[item.live_id]?.connected ? 'good' : 'warn' : '')} />{!item.enabled ? '已暂停' : streams[item.live_id]?.connected ? '已同步' : '正在同步'}</span><Button variant="ghost" size="sm" className={'toggle-monitor ' + (item.enabled ? 'pause' : 'start')} aria-label={(item.enabled ? '暂停 ' : '启动 ') + roomName(item) + ' 监控'} isDisabled={busy} onPress={() => void operate([item], !item.enabled)}>{item.enabled ? <><PauseOutlined />暂停</> : <><PlayCircleOutlined />启动</>}</Button><Button variant="ghost" size="sm" onPress={() => openSettings(item.live_id)} aria-label={'配置 ' + roomName(item)}><SettingOutlined />配置</Button><Button variant="ghost" size="sm" className="remove-monitor" aria-label={'删除直播间 ' + roomName(item)} isDisabled={busy} onPress={() => confirmRemoval([item])}><DeleteOutlined />删除</Button></div>
             </Card>)}
             {loaded && !filtered.length && <EmptyState className="empty-state"><SearchOutlined /><strong>{!rooms.length ? '开始监控第一个直播间' : view === 'attention' ? '暂无采集故障' : '没有匹配的直播间'}</strong><p>{!rooms.length ? '添加抖音直播间号或链接，接收实时互动。' : view === 'attention' ? '此处显示连接失败、正在重连或消息积压的房间；等待开播属于正常状态。' : '调整筛选条件，或返回全部直播间。'}</p><Button size="sm" variant="secondary" onPress={() => rooms.length ? resetFilters() : setAddOpen(true)}>{rooms.length ? '查看全部直播间' : '添加直播间'}</Button></EmptyState>}
             {loaded && rooms.length > 0 && <Button variant="ghost" className="add-channel" onPress={() => setAddOpen(true)}><PlusOutlined />添加更多直播间</Button>}
@@ -301,14 +336,20 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
             <div className="inspector-section"><h4>采集状态</h4><div className="connection-detail"><span className={'status-dot ' + (activeStream?.connected ? 'good' : 'warn')} /><span>{activeStream?.connected ? '消息连接正常' : '消息连接正在恢复'}</span></div><dl className="detail-stats"><div><dt>最近资料检查</dt><dd>{room.metadata?.checked_at_ms ? time(room.metadata.checked_at_ms) : '等待检查'}</dd></div>{room.metadata?.live_started_at_ms ? <div><dt>最近开播</dt><dd>{new Date(room.metadata.live_started_at_ms).toLocaleString('zh-CN')}</dd></div> : null}</dl>{room.detail && <p className={'detail-note ' + (needsAttention(room) ? 'warning' : '')}>{room.detail}</p>}{activeStream?.error && <p className="detail-note warning" role="alert">{activeStream.error}</p>}</div>
             <div className="inspector-section"><h4>采集身份</h4><CollectorIdentity status={health?.collector.room_auth?.[active]?.auth_status} /><Button fullWidth variant="secondary" className="identity-config-button" onPress={() => openSettings(room.live_id)}><SettingOutlined />配置此房间 Cookie</Button></div>
             <Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([room], !room.enabled)}>{room.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{room.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button>
+            <Button fullWidth className="room-control-button remove-monitor" variant="ghost" aria-label="删除此直播间" isDisabled={busy} onPress={() => confirmRemoval([room])}><DeleteOutlined />删除此直播间</Button>
           </div> : <EmptyState className="empty-state"><UserOutlined /><strong>还未选择直播间</strong><p>添加房间后，可在这里查看主播资料和采集状态。</p></EmptyState>}
     </div></Dialog>
     <Dialog open={addOpen} onChange={value => { if (!busy) setAddOpen(value) }} title="添加直播间" footer={<><Button variant="secondary" isDisabled={busy} onPress={() => setAddOpen(false)}>取消</Button><Button isDisabled={busy || !roomInput.trim()} onPress={() => void addRooms()}><PlusOutlined />{busy ? '正在添加…' : '添加并开始监控'}</Button></>}>
       <div className="dialog-intro"><div className="dialog-symbol"><PlusOutlined /></div><p>将需要关注的直播间加入工作台。<br />支持批量添加，每行输入一个房间号或链接。</p></div>
       <Label className="field-label" htmlFor="room-addresses">直播间地址</Label><TextArea id="room-addresses" rows={6} value={roomInput} onChange={event => setRoomInput(event.target.value)} placeholder={'输入房间号，例如 123456789\n或 https://live.douyin.com/123456789'} disabled={busy} />
-      <div className="dialog-hint"><CheckCircleOutlined /><span>每次最多 50 间，已监控房间自动跳过，已暂停房间重新启动。新房间使用独立游客身份，可在配置中添加 Cookie。</span></div>{addError && <InlineFeedback>{addError}</InlineFeedback>}
+      <div className="dialog-hint"><CheckCircleOutlined /><span>每次最多 50 间，已监控房间自动跳过，已暂停或删除的房间重新启动并沿用历史记录和配置。新房间使用独立游客身份，可在配置中添加 Cookie。</span></div>{addError && <InlineFeedback>{addError}</InlineFeedback>}
     </Dialog>
-    <Dialog open={settingsOpen && !!settingsRoom} onChange={setSettingsOpen} title={settingsRoom ? roomName(settingsRoom) + ' · 采集配置' : '采集配置'}>{settingsRoom && <><CookieSettings liveId={settingsRoom.live_id} onSaved={() => void load()} /><Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([settingsRoom], !settingsRoom.enabled)}>{settingsRoom.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{settingsRoom.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button></>}</Dialog>
+    <Dialog open={settingsOpen && !!settingsRoom} onChange={setSettingsOpen} title={settingsRoom ? roomName(settingsRoom) + ' · 采集配置' : '采集配置'}>{settingsRoom && <><CookieSettings liveId={settingsRoom.live_id} onSaved={() => void load()} /><Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([settingsRoom], !settingsRoom.enabled)}>{settingsRoom.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{settingsRoom.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button><Button fullWidth className="room-control-button remove-monitor" variant="ghost" aria-label="删除此直播间" isDisabled={busy} onPress={() => confirmRemoval([settingsRoom])}><DeleteOutlined />删除此直播间</Button></>}</Dialog>
+    <Dialog open={removalTargets.length > 0} onChange={open => { if (!open && !busy) setRemovalTargets([]) }} title={removalTargets.length > 1 ? `删除 ${removalTargets.length} 个直播间` : '删除直播间'} footer={<><Button variant="secondary" isDisabled={busy} onPress={() => setRemovalTargets([])}>取消</Button><Button variant="danger" isDisabled={busy} onPress={() => void removeRooms()}>{busy ? '正在删除…' : '确认删除'}</Button></>}>
+      <p className="dialog-description">删除后会停止采集，并从监控列表移除。历史记录和房间配置会保留，重新添加相同房间号可继续使用。</p>
+      <ul className="removal-room-list">{removalTargets.map(item => <li key={item.live_id}><strong>{roomName(item)}</strong><span>{item.live_id}</span></li>)}</ul>
+      {removalError && <InlineFeedback>{removalError}</InlineFeedback>}
+    </Dialog>
     <Dialog open={runtimeOpen} onChange={setRuntimeOpen} title="服务运行状态">
       <p className="dialog-description">查看采集、存储及推送服务的当前状态。</p>
       {!!health?.collector.spool_quarantine?.files && <InlineFeedback>已保留 {number(health.collector.spool_quarantine.files)} 个未完整写入的采集文件（{(health.collector.spool_quarantine.bytes / 1024).toFixed(1)} KB），可在维护时备份并检查。</InlineFeedback>}

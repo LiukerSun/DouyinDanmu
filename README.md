@@ -50,13 +50,15 @@
 
 ## Windows 便携版
 
-[下载 v2.1.1 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.1/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.1/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.1.1)
+[下载 v2.1.2 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.2/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.2/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.1.2)
 
 系统要求：**Windows 10（1903 或更新版本）/ Windows 11，x64**。运行环境已包含在发布包中，无需安装 Docker、Node.js、数据库或编译器。
 
 1. 将 ZIP 完整解压到有写入权限的目录。
 2. 双击 `start.cmd`，浏览器会打开 [本地工作台](http://localhost:3000)。
 3. 首次访问创建管理员账号，然后添加直播间号或直播链接。
+
+“暂停”保留房间卡片，方便随时启动；“删除”在确认后停止采集并移出监控列表，支持单个或批量操作。删除保留历史记录和房间配置，重新添加相同房间号可继续使用。
 
 请从解压后的目录运行，保留包内的 `app`、`bin`、`runtime` 和 `web` 目录。首次启动无需下载运行依赖，采集直播需要联网。
 

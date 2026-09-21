@@ -97,6 +97,7 @@ public:
         exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
         exec(R"SQL(
           CREATE TABLE IF NOT EXISTS rooms(live_id TEXT PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,version INTEGER NOT NULL DEFAULT 1,status TEXT NOT NULL DEFAULT 'connecting',detail TEXT NOT NULL DEFAULT '',chat INTEGER DEFAULT 0,gift INTEGER DEFAULT 0,enter_count INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,online INTEGER DEFAULT 0,total INTEGER DEFAULT 0,updated_at INTEGER DEFAULT 0);
+          CREATE TABLE IF NOT EXISTS room_removals(live_id TEXT PRIMARY KEY);
           CREATE TABLE IF NOT EXISTS receipts(frame_id TEXT PRIMARY KEY,hash TEXT NOT NULL,created_at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id TEXT UNIQUE NOT NULL,live_id TEXT NOT NULL,body TEXT NOT NULL);
           CREATE INDEX IF NOT EXISTS events_room_seq ON events(live_id,id);
@@ -135,7 +136,7 @@ public:
     ~Store() { sqlite3_close(db); }
     json rooms() {
         std::lock_guard<std::mutex> guard(mutex); json result=json::array();
-        Statement q(db,"SELECT r.live_id,r.source,r.title,r.enabled,r.version,r.status,r.detail,r.updated_at,m.body,m.checked_at FROM rooms r LEFT JOIN room_metadata m ON m.live_id=r.live_id ORDER BY r.source,r.title");
+        Statement q(db,"SELECT r.live_id,r.source,r.title,r.enabled,r.version,r.status,r.detail,r.updated_at,m.body,m.checked_at FROM rooms r LEFT JOIN room_metadata m ON m.live_id=r.live_id WHERE NOT EXISTS(SELECT 1 FROM room_removals removed WHERE removed.live_id=r.live_id) ORDER BY r.source,r.title");
         while(q.row()) {
             auto metadata=q.str(8).empty()?json(nullptr):json::parse(q.str(8));
             result.push_back({{"live_id",q.str(0)},{"source",q.str(1)},{"title",q.str(2)},{"enabled",q.number(3)!=0},{"version",q.number(4)},{"status",q.str(5)},{"detail",q.str(6)},{"updated_at",q.number(7)},{"stats",stats_unlocked(q.str(0))},{"metadata",metadata},{"metadata_stale",q.number(9)==0 || now_ms()-q.number(9)>180000}});
@@ -144,8 +145,29 @@ public:
     }
     void target(const std::string& live, const std::string& source, bool enabled) {
         std::lock_guard<std::mutex> guard(mutex);
-        Statement q(db,"INSERT INTO rooms(live_id,source,title,enabled,status) VALUES(?,?,?,?,?) ON CONFLICT(live_id) DO UPDATE SET enabled=excluded.enabled,version=rooms.version+1,status=excluded.status,detail=''");
-        q.text(1,live).text(2,source).text(3,source=="demo" ? "演示直播间 · 消息管线" : "抖音直播间 " + live).num(4,enabled).text(5,enabled?"connecting":"stopped").row();
+        exec("BEGIN IMMEDIATE");
+        try {
+            Statement q(db,"INSERT INTO rooms(live_id,source,title,enabled,status) VALUES(?,?,?,?,?) ON CONFLICT(live_id) DO UPDATE SET enabled=excluded.enabled,version=rooms.version+1,status=excluded.status,detail=''");
+            q.text(1,live).text(2,source).text(3,source=="demo" ? "演示直播间 · 消息管线" : "抖音直播间 " + live).num(4,enabled).text(5,enabled?"connecting":"stopped").row();
+            // Only an explicit add/resume restores membership. A delayed pause
+            // request must not bring a removed target back into the list.
+            if(enabled) {Statement restore(db,"DELETE FROM room_removals WHERE live_id=?");restore.text(1,live).row();}
+            exec("COMMIT");
+        } catch(...) {exec("ROLLBACK");throw;}
+    }
+    bool remove_target(const std::string& live) {
+        std::lock_guard<std::mutex> guard(mutex);
+        exec("BEGIN IMMEDIATE");
+        try {
+            Statement exists(db,"SELECT live_id FROM rooms WHERE live_id=?");exists.text(1,live);
+            if(!exists.row()){exec("COMMIT");return false;}
+            // Keep the room row: history queries join it and its version must
+            // never reset, or buffered old-session state could become current.
+            Statement stop(db,"UPDATE rooms SET enabled=0,version=version+1,status='stopped',detail='' WHERE live_id=? AND NOT EXISTS(SELECT 1 FROM room_removals WHERE live_id=?)");
+            stop.text(1,live).text(2,live).row();
+            Statement hide(db,"INSERT OR IGNORE INTO room_removals(live_id) VALUES(?)");hide.text(1,live).row();
+            exec("COMMIT");return true;
+        } catch(...) {exec("ROLLBACK");throw;}
     }
     json snapshot(const std::string& live) {
         std::lock_guard<std::mutex> guard(mutex);
@@ -568,6 +590,11 @@ int main(int argc, char** argv) {
             store.target(live,source,true);res.status=202;send(res,{{"live_id",live},{"status","connecting"}});
         });
         http.Delete(R"(/api/rooms/([a-zA-Z0-9]+))",[&](const httplib::Request& req,httplib::Response& res){auto live=req.matches[1].str();store.target(live,live=="demo"?"demo":"douyin",false);send(res,{{"status","stopped"}});});
+        http.Post(R"(/api/rooms/(demo|[0-9]{1,30})/remove)",[&](const httplib::Request& req,httplib::Response& res){
+            const auto live=req.matches[1].str();
+            if(!store.remove_target(live)){res.status=404;send(res,{{"error","直播间不存在"}});return;}
+            send(res,{{"live_id",live},{"status","removed"}});
+        });
         http.Get(R"(/api/rooms/([a-zA-Z0-9]+)/snapshot)",[&](const httplib::Request& req,httplib::Response& res){send(res,store.snapshot(req.matches[1].str()));});
         http.Get(R"(/api/rooms/([a-zA-Z0-9]+)/stats)",[&](const httplib::Request& req,httplib::Response& res){send(res,cache.stats(store,req.matches[1].str()));});
         http.Get(R"(/api/rooms/([a-zA-Z0-9]+)/events)",[&](const httplib::Request& req,httplib::Response& res){

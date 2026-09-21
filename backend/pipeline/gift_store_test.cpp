@@ -727,9 +727,12 @@ void late_connection_status_cannot_override_active_stream() {
 #include "analytics_test.inc"
 #include "store_recovery_test.inc"
 #include "gift_fact_repair_test.inc"
+#include "room_removal_test.inc"
 
 int main() {
     try {
+        room_removal_preserves_history_and_readd_versions();
+        room_removal_rejects_late_state_without_losing_buffered_events();
         gift_delivery_facts_stay_separate_from_display();
         replay_promotes_failed_placeholders_atomically();
         heartbeat_reports_backpressure_without_spool();

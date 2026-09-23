@@ -445,9 +445,9 @@ void sparse_progress_matches_only_an_unambiguous_recipient() {
     check_stats(store, room_a, 1, 3);
     const auto journal = store.events(room_a, 0);
     check(journal.size() == 3, "Sparse progress must preserve each unique journal event");
-    check(journal[1].at("display_id") == "anchor-combo" && journal[1].at("gift_final") == false &&
+    check(journal[1].at("display_id") == "anchor-combo" && journal[1].at("gift_combo") == false && journal[1].at("gift_final") == true &&
           journal[2].at("display_id") == "anchor-combo" && journal[2].at("gift_final") == true,
-          "Journal consumers must receive the resolved display identity and corrected final state");
+          "Journal facts retain parsed flags while display projections preserve established combo state");
 
     deliver(store, room_a, progress("cohost-first", "cohost-combo", 4, true, "cohost", false, 0));
     snapshot = store.snapshot(room_a);
@@ -659,6 +659,7 @@ void debug_startup_and_details() {
     check(!read_startup_options({"--redecode-details"}).apply,"Re-decode remains read-only by default");
     check(read_startup_options({"--replay-quarantine","--apply"}).apply,"Existing maintenance commands remain available");
     check(!read_startup_options({"--repair-gift-facts"}).apply && read_startup_options({"--repair-gift-facts","--apply"}).apply,"Gift fact repair is explicitly opt-in and dry-run by default");
+    check(read_startup_options({"--repair-gift-groups"}).command=="--repair-gift-groups" && !read_startup_options({"--repair-gift-groups"}).apply && read_startup_options({"--repair-gift-groups","--apply"}).apply,"Gift group repair is explicitly opt-in and dry-run by default");
     for(const auto& args:std::vector<std::vector<std::string>>{{"--debug=false"},{"--debug","--apply"},{"--redecode-details","--debug"},{"--unknown"}}) {
         bool rejected=false;try{read_startup_options(args);}catch(const std::invalid_argument&){rejected=true;}
         check(rejected,"Invalid flags must fail instead of silently enabling debug");
@@ -725,12 +726,17 @@ void late_connection_status_cannot_override_active_stream() {
 }
 
 #include "analytics_test.inc"
+#include "gift_group_identity_test.inc"
 #include "store_recovery_test.inc"
 #include "gift_fact_repair_test.inc"
+#include "gift_group_repair_test.inc"
 #include "room_removal_test.inc"
 
 int main() {
     try {
+        non_combo_group_counts_progress_once();
+        gift_group_identity_keeps_independent_deliveries_separate();
+        non_combo_sparse_recipients_require_one_candidate();
         room_removal_preserves_history_and_readd_versions();
         room_removal_rejects_late_state_without_losing_buffered_events();
         gift_delivery_facts_stay_separate_from_display();
@@ -738,6 +744,9 @@ int main() {
         heartbeat_reports_backpressure_without_spool();
         gift_fact_repair_restores_proven_groups();
         gift_fact_repair_skips_incomplete_groups_and_rolls_back();
+        gift_group_repair_restores_split_groups();
+        gift_group_repair_separates_recipients_and_skips_unproven_groups();
+        gift_group_repair_rolls_back_all_projections();
         audience_analytics();
         analytics_backfill_and_precision();
         analytics_query_validation();

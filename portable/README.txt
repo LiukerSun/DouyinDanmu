@@ -12,6 +12,7 @@
 
 进入单个直播间，点击“本房间排行榜”查看弹幕榜和礼物榜。
 可筛选今天、近 7 天或全部已采集记录；榜单和用户明细均限定在当前房间。
+礼物明细显示“本次新增”和“上报数量”，同组累计 1～10 只计 10 个。
 
 启动脚本：
   start.cmd                  普通模式，协议诊断隐藏
@@ -27,6 +28,15 @@
 运行日志：logs 目录
 更新前先停止旧版；把整个 data 目录复制到新版目录后，再启动新版。
 本包使用独立的新数据目录，不会自动读取或修改 Docker 卷内的数据。
+
+旧版礼物连送已重复计数时，升级不会自动改写历史。停止程序后，
+在本目录打开 PowerShell，先预览，再应用：
+  $env:DATABASE_PATH = (Resolve-Path '.\data\pipeline.db').Path
+  .\bin\douyin-pipeline.exe --repair-gift-groups
+  .\bin\douyin-pipeline.exe --repair-gift-groups --apply
+应用前会自动建立完整数据库备份，报告 backup 是备份路径。
+缺少原始载荷或身份有歧义的组会跳过，请查看 skipped_groups / skip_reasons。
+完整说明：https://github.com/LiukerSun/DouyinDanmu/blob/master/backend/pipeline/analytics-api.md
 
 程序只监听本机，不需要管理员权限。首次启动无需联网下载依赖；
 采集抖音直播仍需要网络。未开播时会正常等待开播。

@@ -97,6 +97,33 @@ assert.ok(pricedComboMarkup.includes('× 3') && pricedComboMarkup.includes('1,80
 for (const price of [undefined, null, -1, NaN, Infinity]) assert.ok(!render(event({gift_unit_price: price})).includes('gift-price'), '未知或无效价格不得显示为钻石价值');
 assert.ok(render(event({gift_unit_price: 0})).includes('0 钻石'), '明确的零价格必须与未知价格区分');
 console.log('PASS: known gift values, cumulative combo totals, unknown prices and explicit zero prices');
+// Raw history keeps every delivery; each row must report only its analytics delta.
+for (let count = 1; count <= 10; count++) {
+  const markup = render(event({content: '嘉年华', gift_count: count, gift_unit_price: 30000, gift_combo: false,
+    gift_statistics: {quantity_delta: '1', unit_price: 30000, value_delta: '30000'}}));
+  assert.ok(markup.includes('本次新增'), 'Raw gift history must label the increment instead of presenting a cumulative frame as another gift');
+  assert.match(markup, /gift-number[^>]*>× 1</);
+  assert.match(markup, /gift-price[^>]*>30,000 钻石</);
+  assert.ok(markup.includes('上报数量 × ' + count), 'Preserve the reported count separately from the increment');
+}
+for (const count of [10, 9, 4]) {
+  const markup = render(event({gift_count: count, gift_unit_price: 30000,
+    gift_statistics: {quantity_delta: '0', unit_price: 30000, value_delta: '0'}}));
+  assert.ok(markup.includes('本次未新增') && markup.includes('不重复计入'));
+  assert.match(markup, /gift-number[^>]*>× 0</);
+  assert.match(markup, /gift-price[^>]*>0 钻石</);
+}
+const preciseGift = render(event({gift_count: 10, gift_unit_price: 30000,
+  gift_statistics: {quantity_delta: '9007199254740993', unit_price: 30000, value_delta: '270215977642229790000'}}));
+assert.ok(preciseGift.includes('× 9,007,199,254,740,993') && preciseGift.includes('270,215,977,642,229,790,000 钻石'), 'Analytics strings must never round through Number');
+const unknownDelta = render(event({gift_count: 10, gift_unit_price: 30000,
+  gift_statistics: {quantity_delta: '1', unit_price: null, value_delta: null}}));
+assert.ok(unknownDelta.includes('价格未知') && !unknownDelta.includes('300,000 钻石'), 'Unknown statistical price must not borrow the merged presentation price');
+const freeDelta = render(event({gift_count: 10, gift_unit_price: 30000,
+  gift_statistics: {quantity_delta: '1', unit_price: 0, value_delta: '0'}}));
+assert.ok(freeDelta.includes('0 钻石') && !freeDelta.includes('价格未知'), 'An explicit zero statistical value is known');
+assert.ok(!pricedComboMarkup.includes('本次新增') && pricedComboMarkup.includes('× 3') && pricedComboMarkup.includes('1,800 钻石'), 'Live and merged gifts retain cumulative presentation when statistics are absent');
+console.log('PASS: raw gift increments, unchanged reported counts, zero additions, exact large values, unknown and zero prices');
 const unknown = render(event({type: 'chat', content: '你好[色]'}));
 assert.ok(unknown.includes('9007199254740993'), '完整 UID 不得截断或丢精度');
 assert.ok(unknown.includes('财富等级未知'), '缺失财富等级不得展示 0 级');

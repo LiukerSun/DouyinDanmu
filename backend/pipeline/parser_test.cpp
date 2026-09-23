@@ -177,11 +177,19 @@ void gift_fields_and_identity() {
         if (missing == 0) standalone.group = 0;
         if (missing == 1) standalone.sender = 0;
         if (missing == 2) standalone.receiver = 0;
-        if (missing == 3) standalone.combo = false;
+        if (missing == 3) standalone.gift_id = 0;
         const auto event = one("WebcastGiftMessage", gift_wire(standalone));
-        check(event.at("display_id") == event.at("event_id"), "Unidentified/non-combo gifts must remain separate observations");
-        if (missing == 3) check(event.at("gift_final") == true, "Non-combo gift is immediately final");
+        check(event.at("display_id") == event.at("event_id"), "Gifts without a complete group identity must remain separate observations");
     }
+    auto non_combo = options;
+    non_combo.combo = false;
+    const auto independent_flag = one("WebcastGiftMessage", gift_wire(non_combo), 103);
+    check(independent_flag.at("display_id") == final.at("display_id"),
+          "GiftStruct.combo must not split a gift group with the same complete identity");
+    check(independent_flag.at("gift_combo") == false && independent_flag.at("gift_final") == true,
+          "Grouping must preserve the observed non-combo flag");
+    const auto roomless = one("WebcastGiftMessage", gift_wire(options), 104, "");
+    check(roomless.at("display_id") == roomless.at("event_id"), "Missing room identity cannot create a gift display group");
     options = {};
     options.combo_count = 0; options.repeat_count = 0; options.name = false;
     const auto fallback = one("WebcastGiftMessage", gift_wire(options));

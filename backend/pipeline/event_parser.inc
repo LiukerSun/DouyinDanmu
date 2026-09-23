@@ -52,8 +52,7 @@ static void gift_fields(json& e, const GiftMessage& gift, const std::string& roo
     e["gift_combo"]=gift.gift().combo();
     e["gift_final"]=!gift.gift().combo() || gift.repeat_end()==1;
     e["gift_id"]=gift_id; e["group_id"]=group_id; e["recipient_id"]=recipient;
-    // This is a candidate lookup key, not permission to merge: Store must
-    // resolve it against one already identified group and compatible recipient.
+    // Store resolves recipient omissions only against one compatible group.
     if(!room_id.empty() && !sender.empty() && gift_id!="0" && gift.group_id()!=0)
         e["gift_group_key"]="gift-group:"+digest(json::array({room_id,sender,gift_id,group_id}).dump());
     e["recipient_ids"]=json::array();
@@ -64,9 +63,11 @@ static void gift_fields(json& e, const GiftMessage& gift, const std::string& roo
     e["gift_raw_counts"]={{"group_count",std::to_string(gift.group_count())},{"repeat_count",std::to_string(gift.repeat_count())},
         {"combo_count",std::to_string(gift.combo_count())},{"repeat_end",std::to_string(gift.repeat_end())},
         {"total_count",std::to_string(gift.total_count())},{"fan_ticket_count",std::to_string(gift.fan_ticket_count())}};
-    // Only an identified combo with a group and both participants may merge.
+    // The gift metadata's combo flag is not group identity: high-value gifts
+    // can report cumulative repeat counts with combo=false. Require the room,
+    // gift, group and both participants, while preserving the observed flag.
     // JSON array encoding prevents delimiter collisions between identity parts.
-    if(gift.gift().combo() && gift.group_id()!=0 && !sender.empty() && !recipient.empty())
+    if(!room_id.empty() && gift_id!="0" && gift.group_id()!=0 && !sender.empty() && !recipient.empty())
         e["display_id"]="gift:"+digest(json::array({room_id,sender,recipient,gift_id,group_id}).dump());
 }
 #include "message_monitor.inc"

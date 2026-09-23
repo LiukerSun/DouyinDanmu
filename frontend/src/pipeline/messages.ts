@@ -24,6 +24,7 @@ export type PipelineEvent = {
   gift_unit_price?: number | null
   gift_combo?: boolean
   gift_final?: boolean
+  gift_statistics?: { quantity_delta: string; unit_price: number | null; value_delta: string | null }
   persisted_at_ms: number
   received_at_ms: number
 }

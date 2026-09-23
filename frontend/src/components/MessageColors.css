@@ -24,6 +24,7 @@
 .gift-token .gift-name { font-weight: 650; overflow-wrap: anywhere; }
 .gift-token .gift-number { margin: 0; color: inherit; white-space: nowrap; }
 .message-content .gift-progress { margin-left: 5px; color: #7d6c50; font-size: 11px; }
+.gift-reported-count, .gift-accounting-note { margin-left: 8px; color: #82758f; font-size: 11px; white-space: nowrap; }
 .feed-heading-actions { display: flex; align-items: center; gap: 5px; }
 .console-app .color-guide-button { font-size: 12px; min-height: 30px; height: 30px; padding-inline: 8px; }
 .color-guide { display: grid; gap: 22px; }

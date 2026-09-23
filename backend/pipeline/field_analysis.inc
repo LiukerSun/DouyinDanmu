@@ -2,7 +2,7 @@
 #include <cstring>
 
 static constexpr int field_analysis_version=3;
-static constexpr int event_parser_version=7;
+static constexpr int event_parser_version=8;
 // Structural inspection only: a valid wire shape does not establish semantics.
 // Shared budgets bound nested candidates and schema traversal independently.
 struct FieldAnalysisBudget { int entries=512, nodes=8192, packed_values=512; bool truncated=false; };

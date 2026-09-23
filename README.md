@@ -50,7 +50,7 @@
 
 ## Windows 便携版
 
-[下载 v2.1.2 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.2/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.2/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.1.2)
+[下载 v2.1.3 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.3/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.3/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.1.3)
 
 系统要求：**Windows 10（1903 或更新版本）/ Windows 11，x64**。运行环境已包含在发布包中，无需安装 Docker、Node.js、数据库或编译器。
 
@@ -59,6 +59,8 @@
 3. 首次访问创建管理员账号，然后添加直播间号或直播链接。
 
 “暂停”保留房间卡片，方便随时启动；“删除”在确认后停止采集并移出监控列表，支持单个或批量操作。删除保留历史记录和房间配置，重新添加相同房间号可继续使用。
+
+v2.1.3 修复礼物连送重复计数与明细显示：同组累计 1～10 只计 10 个，明细分别显示本次新增和原始上报数量。已有错误历史请按 [历史连送分组修复](backend/pipeline/analytics-api.md#历史连送分组修复) 停机预览、备份并修复。
 
 请从解压后的目录运行，保留包内的 `app`、`bin`、`runtime` 和 `web` 目录。首次启动无需下载运行依赖，采集直播需要联网。
 

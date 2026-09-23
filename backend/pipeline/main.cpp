@@ -310,17 +310,25 @@ public:
                     const auto recipient=e.value("recipient_id","");
                     Statement candidates(db,R"SQL(SELECT display_id,body FROM message_views
                       WHERE live_id=? AND json_extract(body,'$.gift_group_key')=?
-                      AND (json_extract(body,'$.gift_combo')=1 OR ?=1)
-                      AND (COALESCE(json_extract(body,'$.recipient_id'),'')='' OR ?='' OR json_extract(body,'$.recipient_id')=?) LIMIT 2)SQL");
-                    candidates.text(1,frame.live_id()).text(2,e.at("gift_group_key")).num(3,e.value("gift_combo",false)).text(4,recipient).text(5,recipient);
+                      AND (COALESCE(json_extract(body,'$.recipient_id'),'')='' OR ?='' OR json_extract(body,'$.recipient_id')=?)
+                      ORDER BY (json_extract(body,'$.recipient_id')=?) DESC LIMIT 2)SQL");
+                    candidates.text(1,frame.live_id()).text(2,e.at("gift_group_key")).text(3,recipient).text(4,recipient).text(5,recipient);
                     if(candidates.row()) {
                         const auto candidate_id=candidates.str(0); const auto old=json::parse(candidates.str(1));
-                        if(!candidates.row()) {
+                        const bool another=candidates.row();
+                        // An explicit recipient can continue its unique exact
+                        // match even if unresolved observations also exist.
+                        // Otherwise every compatible candidate must be unique.
+                        const bool exact=!recipient.empty() && old.value("recipient_id","")==recipient &&
+                            (!another || json::parse(candidates.str(1)).value("recipient_id","")!=recipient);
+                        if(!another || exact) {
                             display_id=candidate_id;
                             if(recipient.empty()) e["recipient_id"]=old.value("recipient_id","");
                             if(old.value("gift_combo",false) && !e.value("gift_combo",false)) {
-                                e["gift_combo"]=true;
-                                e["gift_final"]=old.value("gift_final",false)||e.value("repeat_end",uint32_t(0))==1;
+                                // Keep established display metadata for sparse
+                                // progress without rewriting this delivery's facts.
+                                presentation["gift_combo"]=true;
+                                presentation["gift_final"]=old.value("gift_final",false)||e.value("repeat_end",uint32_t(0))==1;
                             }
                             if(e.value("gift_name","")=="礼物 "+e.value("gift_id","")) {
                                 for(const auto* field:{"gift_name","content"}) if(old.contains(field)) presentation[field]=old[field];
@@ -329,9 +337,9 @@ public:
                     }
                 }
                 e["display_id"]=display_id;
-                // Identity may be resolved from one compatible combo. Values,
+                // Identity may be resolved from one compatible group. Values,
                 // timestamps and profiles remain facts of this exact delivery.
-                for(const auto* field:{"display_id","recipient_id","gift_combo","gift_final"})if(e.contains(field))presentation[field]=e[field];
+                for(const auto* field:{"display_id","recipient_id"})if(e.contains(field))presentation[field]=e[field];
                 bool new_display=true; int64_t gift_delta=0;
                 if(type=="gift") {
                     const auto observed=e.at("gift_count").get<int64_t>();
@@ -346,14 +354,14 @@ public:
                            old.contains("gift_unit_price") && !old.at("gift_unit_price").is_null())
                              presentation["gift_unit_price"]=old.at("gift_unit_price");
                         // Late progress frames must not roll back richer terminal data.
-                        if(observed<previous || (finalized&&!e.value("gift_final",false))) {
+                        if(observed<previous || (finalized&&!presentation.value("gift_final",false))) {
                             for(const auto* field:{"user_name","user_level","fans_club","gift_name","content","timestamp"}) {
                                 if(old.contains(field)) presentation[field]=old[field];
                             }
                         }
                     }
                     const auto count=std::max(previous,observed);
-                    presentation["gift_count"]=count; presentation["gift_final"]=finalized||e.value("gift_final",false);
+                    presentation["gift_count"]=count; presentation["gift_final"]=finalized||presentation.value("gift_final",false);
                     gift_delta=count-previous;
                 }
                 Statement ins(db,"INSERT OR IGNORE INTO events(event_id,live_id,body) VALUES(?,?,?)"); ins.text(1,e["event_id"]).text(2,frame.live_id()).text(3,e.dump()).row();
@@ -389,6 +397,7 @@ public:
 #include "quarantine_replay.inc"
 #include "detail_redecode.inc"
 #include "gift_fact_repair.inc"
+#include "gift_group_repair.inc"
 
 static void ingest_body(Store& store,const std::string& body,bool dead=false) {
 pipeline::RawFrameEnvelope frame; json events=json::array(), errors=json::array();
@@ -543,6 +552,7 @@ int main(int argc, char** argv) {
         if(!options.command.empty()) {
             if(options.command=="--redecode-details"){const auto report=redecode_details(options.apply);std::cout<<report.dump(2)<<std::endl;return report["failed"].get<int>()?2:0;}
             if(options.command=="--repair-gift-facts"){const auto report=repair_gift_facts(options.apply);std::cout<<report.dump(2)<<std::endl;return report["failed"].get<int>()?2:0;}
+            if(options.command=="--repair-gift-groups"){const auto report=repair_gift_groups(options.apply);std::cout<<report.dump(2)<<std::endl;return report["failed"].get<int>()?2:0;}
             return replay_quarantine(options.apply);
         }
         Store store; Cache cache; httplib::Server http;

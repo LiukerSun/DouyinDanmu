@@ -7,10 +7,15 @@ import { messageKind, messageContent, type PipelineEvent } from '../pipeline/mes
 
 const labels: Record<string, string> = Object.fromEntries(messageTypes.map(item => [item.type, item.label]))
 const time = (timestamp: number) => new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false })
+const exactGiftNumber = (value: string) => { try { return BigInt(value).toLocaleString('zh-CN') } catch { return '—' } }
 
 export default function PipelineMessage({ event, onInspectUser, onInspectEvent, showDate = false }: { event: PipelineEvent; onInspectUser?: (event: PipelineEvent) => void; onInspectEvent?: (event: PipelineEvent) => void; showDate?: boolean }) {
   const kind = messageKind(event)
   const giftValue = event.gift_unit_price != null && Number.isFinite(event.gift_unit_price) && event.gift_unit_price >= 0 ? event.gift_unit_price * event.gift_count : null
+  // Raw history includes per-delivery accounting. Live and merged messages keep
+  // their cumulative presentation and must not be substituted for these facts.
+  const giftStatistics = event.gift_statistics
+  const noNewGifts = giftStatistics?.quantity_delta === '0'
   const inlineContent = event.type === 'enter' || event.type === 'system'
   const hasUser = !!event.user_id || ['chat', 'gift', 'enter', 'like', 'social', 'emoji', 'fansclub'].includes(event.type)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -48,7 +53,13 @@ export default function PipelineMessage({ event, onInspectUser, onInspectEvent, 
       {onInspectEvent && <Button size="sm" variant="ghost" aria-label={'查看消息详情 · ' + (labels[kind] || '消息')} onPress={() => onInspectEvent(event)}>详情</Button>}
       <time>{showDate ? new Date(event.timestamp).toLocaleString('zh-CN', { hour12: false }) : time(event.timestamp)}</time>
       </div>
-      {!inlineContent && <div className="message-content">{event.type === 'gift' ? <>送出 <Chip className="message-chip gift-token" data-tone={giftTone(event.content)}><GiftOutlined /><span className="gift-name">{event.content}</span><strong className="gift-number">× {event.gift_count}</strong></Chip>{giftValue != null && <span className="gift-price">{giftValue.toLocaleString('zh-CN')} 钻石</span>}{event.gift_combo !== false && event.gift_final != null && <span className={'gift-progress ' + (event.gift_final ? 'complete' : '')}>{event.gift_final ? '连送完成' : '连送中'}</span>}</> : <ChatContent content={messageContent(event)} />}</div>}
+      {!inlineContent && <div className="message-content">{event.type === 'gift' ? <>
+        <span className="gift-increment-label">{giftStatistics ? noNewGifts ? '本次未新增' : '本次新增' : '送出'}</span>{' '}
+        <Chip className="message-chip gift-token" data-tone={giftTone(event.content)}><GiftOutlined /><span className="gift-name">{event.content}</span><strong className="gift-number">× {giftStatistics ? exactGiftNumber(giftStatistics.quantity_delta) : event.gift_count}</strong></Chip>
+        {giftStatistics ? <span className="gift-price">{giftStatistics.value_delta === null ? '价格未知' : `${exactGiftNumber(giftStatistics.value_delta)} 钻石`}</span> : giftValue != null && <span className="gift-price">{giftValue.toLocaleString('zh-CN')} 钻石</span>}
+        {giftStatistics && <><span className="gift-reported-count">上报数量 × {event.gift_count.toLocaleString('zh-CN')}</span>{noNewGifts && <span className="gift-accounting-note">不重复计入</span>}</>}
+        {event.gift_combo !== false && event.gift_final != null && <span className={'gift-progress ' + (event.gift_final ? 'complete' : '')}>{event.gift_final ? '连送完成' : '连送中'}</span>}
+      </> : <ChatContent content={messageContent(event)} />}</div>}
     </div>
     <span className="message-seq">#{event.seq}</span>
   </div>

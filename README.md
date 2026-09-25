@@ -194,3 +194,9 @@ powershell -ExecutionPolicy Bypass -File portable/build-windows.ps1
 运行时及构建依赖包含 Node.js、Protobuf、Boost、SQLite、zlib、React、HeroUI 等组件，其许可文件随便携包保存在 `licenses/`。中文字体许可见 [`OFL-NotoSansSC.txt`](frontend/public/licenses/OFL-NotoSansSC.txt)，原生工具链许可见 [`portable/licenses/`](portable/licenses)。使用和分发时应保留对应许可文件。
 
 原 C# WinForms 项目位于 [`legacy/winforms/`](legacy/winforms)，该目录属于独立的旧版实现。当前 Web 工作台使用本页所列的便携版或 Docker 入口。
+
+## 致谢
+
+本项目受到以下项目的启发：
+
+- [saermart/DouyinLiveWebFetcher](https://github.com/saermart/DouyinLiveWebFetcher) — 原始 Python 版本，JavaScript 签名算法来源于该项目。

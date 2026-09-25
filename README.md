@@ -187,13 +187,10 @@ powershell -ExecutionPolicy Bypass -File portable/build-windows.ps1
 - 程序采用单机存储和单管理员工作空间，未提供多租户权限或多机高可用。
 - 历史数据会持续增长，没有自动清理策略，需要定期检查磁盘空间并备份。
 - 默认配置面向本机使用；对外部署需配置 HTTPS、允许来源和独立的服务凭据。
-- 旧 WinForms 版本的配置与数据不会自动迁移到当前工作台。
 
-## 第三方许可与旧版
+## 第三方许可
 
 运行时及构建依赖包含 Node.js、Protobuf、Boost、SQLite、zlib、React、HeroUI 等组件，其许可文件随便携包保存在 `licenses/`。中文字体许可见 [`OFL-NotoSansSC.txt`](frontend/public/licenses/OFL-NotoSansSC.txt)，原生工具链许可见 [`portable/licenses/`](portable/licenses)。使用和分发时应保留对应许可文件。
-
-原 C# WinForms 项目位于 [`legacy/winforms/`](legacy/winforms)，该目录属于独立的旧版实现。当前 Web 工作台使用本页所列的便携版或 Docker 入口。
 
 ## 致谢
 

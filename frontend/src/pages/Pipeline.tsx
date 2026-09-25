@@ -11,6 +11,7 @@ import MessageArchive, { type ArchiveUser } from './MessageArchive'
 import CollectorIdentity from '../components/CollectorIdentity'
 import CookieSettings from '../components/CookieSettings'
 import RoomRankings from '../components/RoomRankings'
+import RoomSessions from '../components/RoomSessions'
 import { useRoomStreams } from '../hooks/useRoomStreams'
 import { useRoomReorder } from '../hooks/useRoomReorder'
 import { wealthBands, fansBands, feedMessageTypes } from '../pipeline/message-colors'
@@ -285,9 +286,9 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
           </div>
         </section>}
 
-        {view === 'room' && <section className={'conversation-panel' + (roomContent === 'rankings' ? ' has-room-rankings' : '')} aria-label="直播间实时互动">
+        {view === 'room' && <section className={'conversation-panel' + (roomContent === 'rankings' ? ' has-room-rankings' : roomContent === 'sessions' ? ' has-room-sessions' : '')} aria-label="直播间实时互动">
           <div className="panel-heading">
-            <div><h2><span className={'feed-indicator ' + (frozen ? 'is-paused' : '')} />{roomContent === 'messages' ? <>实时行为 <span className="count-label">{messages.length}</span></> : '本房间排行榜'}</h2><p>{room ? '正在查看 ' + roomName(room) : '选择直播间查看互动'}</p></div>
+            <div><h2><span className={'feed-indicator ' + (frozen ? 'is-paused' : '')} />{roomContent === 'messages' ? <>实时行为 <span className="count-label">{messages.length}</span></> : roomContent === 'sessions' ? '直播场次' : '本房间排行榜'}</h2><p>{room ? '正在查看 ' + roomName(room) : '选择直播间查看互动'}</p></div>
             {roomContent === 'messages' && <div className="feed-heading-actions"><Button size="sm" variant="ghost" className="color-guide-button" onPress={() => setColorGuideOpen(true)}>配色说明</Button><Button size="sm" variant={frozen ? 'secondary' : 'ghost'} className="pause-button" onPress={() => { setFrozen(previous => previous ? null : allMessages); follow.current = true }}>{frozen ? <PlayCircleOutlined /> : <PauseOutlined />}{frozen ? '继续展示' : '暂停展示'}</Button></div>}
           </div>
           {room && <div className="room-observation">
@@ -302,8 +303,8 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
               <Button size="sm" variant="secondary" onPress={() => setProfileOpen(true)}><UserOutlined />主播信息</Button>
             </div>
           </div>}
-          {room && <StudioFilters label="直播间内容" className="room-content-tabs" value={roomContent} onChange={setRoomContent} options={[{ id: 'messages', label: '实时消息' }, { id: 'rankings', label: '本房间排行榜' }]} />}
-          {roomContent === 'rankings' && room ? <RoomRankings key={room.live_id} room={room.live_id} roomName={roomName(room)} /> : <>
+          {room && <StudioFilters label="直播间内容" className="room-content-tabs" value={roomContent} onChange={setRoomContent} options={[{ id: 'messages', label: '实时消息' }, { id: 'rankings', label: '本房间排行榜' }, { id: 'sessions', label: '直播场次' }]} />}
+          {roomContent === 'sessions' && room ? <RoomSessions key={room.live_id} room={room.live_id} /> : roomContent === 'rankings' && room ? <RoomRankings key={room.live_id} room={room.live_id} roomName={roomName(room)} /> : <>
           <div className="conversation-tools">
             <StudioSearch label="搜索消息" placeholder="搜索内容、昵称或 UID" value={keyword} onChange={setKeyword} clearLabel="清空消息搜索" />
           </div>

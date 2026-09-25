@@ -1,0 +1,54 @@
+.room-sessions { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.session-context { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 18px 14px; color: var(--studio-muted); font-size: 12px; }
+.session-context strong { color: var(--studio-ink); font-weight: 550; }
+.session-context > div { display: flex; align-items: center; gap: 10px; }
+.session-note { margin: 12px 18px; color: #81738b; font-size: 12px; line-height: 1.7; }
+.session-table-scroll { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--studio-line); }
+.session-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.session-table thead { position: sticky; top: 0; z-index: 1; background: #f8f7fc; }
+.session-table th, .session-table td { padding: 12px 18px; border-bottom: 1px solid #eeedf5; vertical-align: middle; }
+.session-table thead th { font-size: 12px; color: #817a95; font-weight: 500; white-space: nowrap; }
+.session-table tbody tr:hover { background: #faf9fe; }
+.session-table td:last-child { text-align: right; white-space: nowrap; }
+.session-started { white-space: nowrap; color: #4b405e; font-variant-numeric: tabular-nums; }
+.session-numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.session-numeric strong { font-size: 15px; font-weight: 600; }
+.session-numeric small { color: #888197; }
+.session-incomplete { display: block; margin-top: 4px; font-size: 11px; color: #a16d28; }
+.session-place { display: inline-grid; place-items: center; min-width: 26px; height: 28px; color: #89839c; font-variant-numeric: tabular-nums; }
+.session-place-leading { background: #eeebfb; color: #6155d9; border-radius: 6px; font-weight: 650; }
+.session-user { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 160px; }
+.session-user strong { color: #3e375d; font-weight: 550; overflow-wrap: anywhere; }
+.session-user > span { font-size: 11px; font-weight: 400; color: #888197; overflow-wrap: anywhere; }
+.session-user small { display: inline-block; margin-left: 8px; color: #766396; }
+.session-pagination { display: flex; justify-content: space-between; align-items: center; flex: none; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--studio-line); color: #888197; font-size: 12px; }
+.session-pagination > div { display: flex; gap: 8px; }
+.session-empty { min-height: 220px; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 26px; color: #888197; text-align: center; }
+.session-empty > .anticon { color: #a69bcf; font-size: 28px; }
+.session-empty strong { color: #625974; font-weight: 550; }
+.session-empty p { max-width: 380px; line-height: 1.8; font-size: 12px; }
+.session-detail-heading { flex: none; display: flex; gap: 18px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--studio-line); }
+.session-detail-heading > div { min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.session-detail-heading strong { color: #4b405e; }
+.session-detail-heading p { flex-basis: 100%; font-size: 12px; margin-top: 5px; color: #888197; }
+.session-metrics { flex: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 14px 18px; margin: 0; }
+.session-metrics > div { padding: 12px 14px; border: 1px solid var(--studio-line); border-radius: 10px; background: #faf9fe; }
+.session-metrics dt { font-size: 12px; color: #817a95; }
+.session-metrics dd { margin: 6px 0 0; font-size: 20px; font-weight: 600; color: #3e375d; font-variant-numeric: tabular-nums; }
+.session-metrics dd small { display: block; margin-top: 4px; font-size: 11px; font-weight: 400; color: #888197; }
+.session-detail-tabs { flex: none; display: flex; gap: 8px; padding: 0 18px 12px; }
+.console-app .session-detail-tabs .is-active { background: #eeeafa; color: #5547b6; }
+.session-events-list { flex: 1; min-height: 0; }
+@media (max-width: 760px) {
+  .room-detail-view .conversation-panel.has-room-sessions { height: auto; min-height: calc(100dvh - 170px); }
+  .has-room-sessions > .panel-heading, .has-room-sessions .room-live-metrics { display: none; }
+  .has-room-sessions .room-sessions { flex: none; }
+  .has-room-sessions .session-table-scroll, .has-room-sessions .session-events-list { flex: none; min-height: 260px; max-height: 420px; }
+  .session-context, .session-pagination, .session-detail-heading { padding: 12px; }
+  .session-metrics, .session-note { padding-inline: 12px; margin-inline: 12px; }
+  .session-detail-tabs { padding-inline: 12px; }
+  .session-table { min-width: 610px; }
+  .session-table th, .session-table td { padding: 10px 12px; }
+  .session-pagination { flex-wrap: wrap; }
+  .session-detail-heading { align-items: flex-start; flex-wrap: wrap; }
+}

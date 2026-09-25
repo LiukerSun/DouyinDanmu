@@ -116,7 +116,7 @@ static std::pair<json,json> parse(const pipeline::RawFrameEnvelope& envelope) {
                 e["action_evidence"]=display.key();e["share_type"]=m.sharetype();
             }
             else if(message.method()=="WebcastRoomUserSeqMessage") { auto m=decode<RoomUserSeqMessage>(message.payload()); e["type"]="online_count"; e["online_count"]=m.total(); e["content"]="在线人数更新"; }
-            else if(message.method()=="WebcastControlMessage") { auto m=decode<ControlMessage>(message.payload()); e["type"]="system"; e["content"]=m.status()==3?"直播已结束":"直播状态更新"; }
+            else if(message.method()=="WebcastControlMessage") { auto m=decode<ControlMessage>(message.payload()); e["type"]="system"; e["control_status"]=m.status(); e["content"]=m.status()==3?"直播已结束":"直播状态更新"; }
         } catch(const std::exception& failure) {
             errors.push_back(message.method()+": "+failure.what());
             e["type"]="parse_error";e["parse_status"]="failed";

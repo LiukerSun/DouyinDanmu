@@ -475,6 +475,14 @@ void user_presence() {
     const auto member = one("WebcastMemberMessage", number(12, 9007199254740993ULL));
     check(member.at("user_id") == "9007199254740993", "Member outer user_id may supply a missing nested UID");
 }
+void control_message_status() {
+    const auto ended = one("WebcastControlMessage", number(2, 3));
+    check(ended.at("type") == "system" && ended.at("control_status") == 3 && ended.at("content") == "直播已结束",
+          "End-of-live control messages must expose the numeric status");
+    const auto update = one("WebcastControlMessage", number(2, 1));
+    check(update.at("control_status") == 1 && update.at("content") == "直播状态更新",
+          "Other control statuses must remain visible without the end label");
+}
 #endif
 } // namespace
 
@@ -492,6 +500,7 @@ int main() {
         additional_observed_schemas();
         named_semantic_fields();
         cdn_named_protocol_fields();
+        control_message_status();
 #endif
         std::cout << "event parser wire regression tests passed\n";
         return 0;

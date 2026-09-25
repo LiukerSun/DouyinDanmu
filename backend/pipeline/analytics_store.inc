@@ -22,10 +22,10 @@
         auto user=event.value("user_id","");
         if(user.empty() || user.size()>32 || user.find_first_not_of("0123456789")!=std::string::npos || user.find_first_not_of('0')==std::string::npos)user.clear();
         auto level=event.contains("user_level") && event["user_level"].is_number_integer()?event["user_level"].get<int64_t>():-1;
-        Statement insert(db,"INSERT INTO analytics_events(seq,event_id,live_id,user_id,user_name,occurred_at_ms,kind,gift_quantity,gift_unit_price,recipient_id,user_level,fans_club) VALUES(?,?,?,?,?,?,?,?,NULLIF(?,-1),?,NULLIF(?,-1),?)");
+        Statement insert(db,"INSERT INTO analytics_events(seq,event_id,live_id,user_id,user_name,occurred_at_ms,kind,gift_quantity,gift_unit_price,recipient_id,user_level,fans_club,like_count) VALUES(?,?,?,?,?,?,?,?,NULLIF(?,-1),?,NULLIF(?,-1),?,?)");
         insert.num(1,seq).text(2,event_id).text(3,live).text(4,user).text(5,event.value("user_name","")).num(6,timestamp).text(7,kind)
             .num(8,quantity).num(9,analytics_price(event,legacy_price)).text(10,event.value("recipient_id","")).num(11,level)
-            .text(12,event.value("fans_club",json(nullptr)).dump()).row();
+            .text(12,event.value("fans_club",json(nullptr)).dump()).num(13,type=="like"?event.value("like_count",int64_t(1)):int64_t(0)).row();
     }
     void analytics_initialize() {
         if(sqlite3_create_function_v2(db,"analytics_sum",2,SQLITE_UTF8|SQLITE_DETERMINISTIC,nullptr,nullptr,analytics_sum_step,analytics_sum_final,nullptr)!=SQLITE_OK)
@@ -39,6 +39,13 @@
               CREATE INDEX IF NOT EXISTS analytics_user_time ON analytics_events(user_id,occurred_at_ms,seq);
               CREATE TABLE IF NOT EXISTS analytics_gift_groups(live_id TEXT NOT NULL,display_id TEXT NOT NULL,quantity INTEGER NOT NULL,PRIMARY KEY(live_id,display_id));
             )SQL");
+            // Session statistics need like counts on the fact rows. Widen before any
+            // projection so the v1 backfill below also writes the column, then repair
+            // rows that were projected before it existed.
+            {
+                Statement exists(db,"SELECT COUNT(*) FROM pragma_table_info('analytics_events') WHERE name='like_count'");exists.row();
+                if(!exists.number(0))exec("ALTER TABLE analytics_events ADD COLUMN like_count INTEGER NOT NULL DEFAULT 0");
+            }
             Statement migration(db,"SELECT name FROM schema_migrations WHERE name='analytics_v1'");
             if(!migration.row()) {
                 Statement events(db,R"SQL(SELECT e.id,e.live_id,e.body,json_extract(d.body,'$.decoded.gift.diamondCount')
@@ -48,6 +55,11 @@
                     analytics_project(events.number(0),events.str(1),json::parse(events.str(2)),price.empty()?json(nullptr):json::parse(price,nullptr,false));
                 }
                 exec("INSERT INTO schema_migrations VALUES('analytics_v1')");
+            }
+            Statement metrics(db,"SELECT name FROM schema_migrations WHERE name='analytics_v2_session_metrics'");
+            if(!metrics.row()) {
+                exec("UPDATE analytics_events SET like_count=COALESCE((SELECT json_extract(e.body,'$.like_count') FROM events e WHERE e.id=analytics_events.seq),0) WHERE kind='like'");
+                exec("INSERT INTO schema_migrations VALUES('analytics_v2_session_metrics')");
             }
             exec("COMMIT");
         } catch(...){exec("ROLLBACK");throw;}

@@ -87,6 +87,7 @@ class Store {
     }
     #include "connection_state_store.inc"
     #include "analytics_store.inc"
+    #include "session_store.inc"
 public:
     Store() {
         auto path = env("DATABASE_PATH", "/data/pipeline.db"); std::filesystem::create_directories(std::filesystem::path(path).parent_path());
@@ -112,6 +113,9 @@ public:
           CREATE TABLE IF NOT EXISTS event_details(event_id TEXT PRIMARY KEY,body TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS event_presentations(event_id TEXT PRIMARY KEY,fields TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS room_connection_state(live_id TEXT PRIMARY KEY,desired_version INTEGER NOT NULL,session_id TEXT NOT NULL,session_seq TEXT NOT NULL,observed_at INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS live_sessions(id INTEGER PRIMARY KEY AUTOINCREMENT,live_id TEXT NOT NULL,room_id TEXT NOT NULL DEFAULT '',started_at_ms INTEGER NOT NULL,ended_at_ms INTEGER,start_source TEXT NOT NULL,end_source TEXT,peak_online INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL);
+          CREATE INDEX IF NOT EXISTS live_sessions_room_time ON live_sessions(live_id,started_at_ms DESC,id DESC);
+          CREATE UNIQUE INDEX IF NOT EXISTS live_sessions_open ON live_sessions(live_id) WHERE ended_at_ms IS NULL;
           CREATE TABLE IF NOT EXISTS quarantine_resolutions(id TEXT PRIMARY KEY,resolved_at INTEGER NOT NULL);
         )SQL");
         // Keep the append-only delivery journal; snapshots read one current row
@@ -132,6 +136,7 @@ public:
             exec("COMMIT");
         } catch(...) { exec("ROLLBACK"); throw; }
         analytics_initialize();
+        sessions_initialize();
     }
     ~Store() { sqlite3_close(db); }
     json rooms() {
@@ -264,6 +269,13 @@ public:
                 if(target.row() && target.number(1)!=0 && target.number(0)==int64_t(frame.desired_version())) {
                     Statement q(db,"INSERT INTO room_metadata(live_id,body,checked_at) VALUES(?,?,?) ON CONFLICT(live_id) DO UPDATE SET body=excluded.body,checked_at=excluded.checked_at WHERE excluded.checked_at>room_metadata.checked_at");
                     q.text(1,frame.live_id()).text(2,metadata.dump()).num(3,metadata.at("checked_at_ms").get<int64_t>()).row();
+                    if(!replay && sqlite3_changes(db)>0) {
+                        const auto checked=metadata.at("checked_at_ms").get<int64_t>();
+                        const auto state=metadata.value("live_status","unknown");
+                        const auto started=metadata.contains("live_started_at_ms") && metadata.at("live_started_at_ms").is_number_integer()?metadata.at("live_started_at_ms").get<int64_t>():int64_t(0);
+                        if(state=="live")session_activity_unlocked(frame.live_id(),metadata.value("room_id",""),checked,"metadata_live",started);
+                        else if(state=="offline")session_end_unlocked(frame.live_id(),checked,"metadata_offline");
+                    }
                 }
             }
             for(auto e:parsed) {
@@ -378,6 +390,14 @@ public:
                 Statement stats(db,"UPDATE rooms SET total=total+?,chat=chat+?,gift=gift+?,enter_count=enter_count+?,likes=likes+?,online=CASE WHEN ?>=0 THEN ? ELSE online END,updated_at=? WHERE live_id=?");
                 auto online=type=="online_count"&&!replay?e.value("online_count",int64_t(0)):int64_t(-1);
                 stats.num(1,new_display).num(2,type=="chat").num(3,type=="gift"&&new_display).num(4,type=="enter").num(5,type=="like"?e.value("like_count",int64_t(1)):0).num(6,online).num(7,online).num(8,now_ms()).text(9,frame.live_id()).row();
+                if(!replay) {
+                    const auto at=session_event_time(e);
+                    if(session_end_signal(e)) { session_end_unlocked(frame.live_id(),at,"control_message"); }
+                    else {
+                        const auto session=session_activity_unlocked(frame.live_id(),frame.room_id(),at,"activity");
+                        if(type=="online_count")session_peak_unlocked(session,e.value("online_count",int64_t(0)));
+                    }
+                }
             }
             int index=0;
             for(const auto& error:replay?json::array():errors) {
@@ -607,6 +627,10 @@ int main(int argc, char** argv) {
         });
         http.Get(R"(/api/rooms/([a-zA-Z0-9]+)/snapshot)",[&](const httplib::Request& req,httplib::Response& res){send(res,store.snapshot(req.matches[1].str()));});
         http.Get(R"(/api/rooms/([a-zA-Z0-9]+)/stats)",[&](const httplib::Request& req,httplib::Response& res){send(res,cache.stats(store,req.matches[1].str()));});
+        http.Get(R"(/api/rooms/(demo|[0-9]{1,30})/sessions)",[&](const httplib::Request& req,httplib::Response& res){
+            try {send(res,store.sessions(req.matches[1].str(),Store::read_session_query(req)));}
+            catch(const std::invalid_argument& e){res.status=400;send(res,{{"error",e.what()}});}
+        });
         http.Get(R"(/api/rooms/([a-zA-Z0-9]+)/events)",[&](const httplib::Request& req,httplib::Response& res){
             try {auto after=std::stoll(req.has_param("after_seq")?req.get_param_value("after_seq"):"0");if(after<0)throw std::invalid_argument("Invalid cursor");send(res,store.frontend_batch(req.matches[1].str(),after));}catch(...){res.status=400;send(res,{{"error","Invalid cursor"}});}
         });

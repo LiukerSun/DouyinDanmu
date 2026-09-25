@@ -1,6 +1,6 @@
 # 观众统计接口
 
-统计接口用于礼物榜、弹幕榜及用户详情。走现有 `/api/` 登录网关，前端无需加载全部消息；桌面版与容器版使用同一组 C++ 接口。仅统计本系统保存的抖音记录，不代表平台全量数据或实际付款金额。
+统计接口用于礼物榜、弹幕榜、用户详情及直播场次。走现有 `/api/` 登录网关，前端无需加载全部消息；桌面版与容器版使用同一组 C++ 接口。仅统计本系统保存的抖音记录，不代表平台全量数据或实际付款金额。
 
 前端入口位于单个直播间内的“本房间排行榜”，提供弹幕榜、礼物榜及今天／近 7 天／全部已采集记录筛选。所有榜单请求明确携带当前 `room`，不展示跨房间排名；切换房间重置榜单状态。点“本房间记录”查询该用户在相同房间、时间范围和快照内的全部行为，返回后保留榜单位置。刷新榜单才获取新快照，翻页期间不自动重排。
 
@@ -13,6 +13,7 @@
 | `/api/analytics/users/{uid}/summary` | 一个用户在筛选范围内的统计摘要 |
 | `/api/analytics/users/{uid}/rooms` | 一个用户在各直播间的统计，按最近出现时间倒序分页 |
 | `/api/messages/search` | 既有消息查询，增加时间及统计快照筛选、礼物统计增量 |
+| `/api/rooms/{live_id}/sessions` | 单个直播间的场次列表及每场统计，见“场次统计” |
 
 ### 通用统计参数
 
@@ -102,6 +103,58 @@ GET /api/messages/search?user_id=9007199254740993&type=gift&view=events&from_ms=
 历史明细使用这些字段显示“本次新增”的数量和价值，并单独保留“上报数量”。例如上报累计从 9 增至 10，显示本次新增 ×1、上报数量 ×10；重复或回退帧显示“本次未新增”，不重复计入榜单。实时消息和合并视图继续展示整组累计数量。
 
 带 `as_of_seq` 的明细必须使用 `view=events`，否则返回 400；合并展示表只保留连送的最新状态，无法还原任意旧快照。查询弹幕榜明细时，既有 `type=chat` 还会包含特殊聊天类型，客户端须按统计返回的 `meta.chat_types` 筛选，或分别使用 `method=WebcastChatMessage` 和对应表情方法查询。
+
+## 场次统计
+
+抖音每次开播分配新的房间 ID，房间 ID 变化是权威的场次边界；下播控制消息与房间元数据轮询补充结束时刻，事件活动推断开始时刻。采集器的 `session_id` 描述采集任务，不代表场次。仅来源为抖音的房间产生场次；演示房间与隔离重放不创建或修改场次。
+
+`GET /api/rooms/{live_id}/sessions` 返回该房间场次列表，按开始时间倒序分页。参数只有 `limit`（默认 20，1–100）和 `offset`（默认 0，0–1000000）；其他查询参数返回 HTTP 400。响应示例：
+
+```json
+{
+  "items": [{
+    "id": 3,
+    "room_id": "938471234567",
+    "started_at_ms": 1788885600000,
+    "ended_at_ms": 1788892800000,
+    "status": "ended",
+    "start_source": "metadata_live",
+    "end_source": "control_message",
+    "stats": {
+      "chat_count": "120",
+      "gift_events": "9",
+      "gift_quantity": "15",
+      "known_gift_value": "70",
+      "unknown_price_quantity": "2",
+      "value_complete": false,
+      "like_count": "3400",
+      "enter_count": "800",
+      "peak_online": 156
+    }
+  }],
+  "total": "3",
+  "next_offset": null,
+  "meta": {
+    "as_of_seq": "12345",
+    "room": "111",
+    "time_basis": "event_timestamp",
+    "time_range": "[started_at_ms,ended_at_ms)",
+    "coverage": "collected_events_only",
+    "value_unit": "diamond",
+    "value_basis": "reported_gift_unit_price",
+    "session_basis": "observed_broadcast_boundaries",
+    "chat_types": ["chat", "emoji"]
+  }
+}
+```
+
+- 场次边界：房间 ID 变化关闭上一场并开启新一场（`room_id_change`）；下播控制消息（`control_message`，历史记录退回文本标签识别）和元数据离线轮询（`metadata_offline`）关闭当前场；任何事件活动（`activity`）或元数据在播轮询（`metadata_live`）开启新场。结束时刻不早于开始时刻。
+- 开始时刻优先采用官方开播时间（与观测时刻相差 12 小时内才采信），否则为首次观测到该场的事件时间；历史回填以该房间 ID 首条已采集记录为准。
+- `stats` 在与排行榜相同的统计事实表上按 `[started_at_ms, ended_at_ms)` 窗口聚合，口径、任意精度金额和快照（`meta.as_of_seq`）与排行榜一致。`gift_events` 是礼物投递记录数（含连送过程），`gift_quantity` 是统计增量合计；`peak_online` 是该场观测到的最高在线人数。
+- 进行中的场次 `ended_at_ms` 为 null、`status` 为 `live`，统计窗口无上界，随采集继续增长；已结束场次为 `ended`。
+- 采集缺口内发生的下播与复播无法观测，会并入同一场；接口不承诺还原监控缺口中的真实场次数量。
+
+首次启动新版本时，`analytics_v2_session_metrics` 迁移为统计事实表补充点赞列并回填历史点赞，`live_sessions_v1` 迁移按入库顺序回放消息日志重建历史场次；房间当前未在采集时，其最后一场按最后一条记录时间关闭。两个迁移各自在单个事务内完成，失败回滚，重复启动不重复执行。
 
 ## 数据维护与性能
 

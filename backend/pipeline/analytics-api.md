@@ -58,7 +58,7 @@
     "coverage": "collected_events_only",
     "value_unit": "diamond",
     "value_basis": "reported_gift_unit_price",
-    "chat_types": ["chat", "emoji"],
+    "chat_types": ["chat", "emoji", "screen_chat"],
     "unattributed_event_count": "0"
   }
 }
@@ -72,7 +72,7 @@
 
 ## 统计口径
 
-- 弹幕只计 `chat` 和 `emoji`。点赞、进场、礼物、通知及暂未确认的特殊聊天类型不计入；相同内容但不同消息 ID 的真实发言各计一次。
+- 弹幕只计 `chat`、`emoji` 和 `screen_chat`（醒目留言）。点赞、进场、礼物、通知及暂未确认的特殊聊天类型不计入；相同内容但不同消息 ID 的真实发言各计一次。
 - 礼物按房间、送礼人、礼物、平台 groupId 与接收者确认连送身份，不依赖礼物属性中的 `combo` 开关。缺少接收者时仅匹配唯一兼容组，存在歧义则独立保留；不同 groupId 不会因时间接近而合并。统计表按每组累计数量的历史最大值计算增量，再按时间筛选。累计 `1 → 2 → 5 → 5` 对应 `1、1、3、0`；乱序回退及结束帧不会额外增加数量。
 - 时间使用记录的 `timestamp`，缺失时退回接收时间或入库时间。跨边界累计增量归到观测到该增量的消息时间；监控缺口中每件礼物的真实发生时刻无法恢复。
 - 价值为本次数量增量乘以消息中的 `GiftStruct.diamondCount`，单位 `diamond`。它是协议报告的礼物单位价值，不直接推算人民币、付款金额或主播收入。
@@ -143,7 +143,7 @@ GET /api/messages/search?user_id=9007199254740993&type=gift&view=events&from_ms=
     "value_unit": "diamond",
     "value_basis": "reported_gift_unit_price",
     "session_basis": "observed_broadcast_boundaries",
-    "chat_types": ["chat", "emoji"]
+    "chat_types": ["chat", "emoji", "screen_chat"]
   }
 }
 ```
@@ -154,7 +154,7 @@ GET /api/messages/search?user_id=9007199254740993&type=gift&view=events&from_ms=
 - 进行中的场次 `ended_at_ms` 为 null、`status` 为 `live`，统计窗口无上界，随采集继续增长；已结束场次为 `ended`。
 - 采集缺口内发生的下播与复播无法观测，会并入同一场；接口不承诺还原监控缺口中的真实场次数量。
 
-首次启动新版本时，`analytics_v2_session_metrics` 迁移为统计事实表补充点赞列并回填历史点赞，`live_sessions_v1` 迁移按入库顺序回放消息日志重建历史场次；房间当前未在采集时，其最后一场按最后一条记录时间关闭。两个迁移各自在单个事务内完成，失败回滚，重复启动不重复执行。
+首次启动新版本时，`analytics_v2_session_metrics` 迁移为统计事实表补充点赞列并回填历史点赞，`live_sessions_v1` 迁移按入库顺序回放消息日志重建历史场次；房间当前未在采集时，其最后一场按最后一条记录时间关闭。`analytics_v3_screen_chat` 迁移把历史醒目留言重新归类为弹幕。各迁移均在单个事务内完成，失败回滚，重复启动不重复执行。
 
 ## 数据维护与性能
 

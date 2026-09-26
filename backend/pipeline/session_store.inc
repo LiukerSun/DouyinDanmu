@@ -133,6 +133,6 @@ public:
         return {{"items",items},{"total",std::to_string(count)},{"next_offset",next<count?json(next):json(nullptr)},
             {"meta",{{"as_of_seq",std::to_string(seq)},{"room",live},{"time_basis","event_timestamp"},{"time_range","[started_at_ms,ended_at_ms)"},
                 {"coverage","collected_events_only"},{"value_unit","diamond"},{"value_basis","reported_gift_unit_price"},
-                {"session_basis","observed_broadcast_boundaries"},{"chat_types",json::array({"chat","emoji"})}}}};
+                {"session_basis","observed_broadcast_boundaries"},{"chat_types",json::array({"chat","emoji","screen_chat"})}}}};
     }
 private:

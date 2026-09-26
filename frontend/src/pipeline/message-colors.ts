@@ -35,7 +35,7 @@ export const messageTypes = [
   { type: 'notice', label: '直播通知', tone: 'slate' },
   { type: 'episode_chat', label: '节目聊天', tone: 'blue' },
   { type: 'audio_chat', label: '语音聊天', tone: 'blue' },
-  { type: 'screen_chat', label: '屏幕聊天', tone: 'blue' },
+  { type: 'screen_chat', label: '醒目留言', tone: 'blue' },
   { type: 'commerce', label: '电商', tone: 'orange' },
   { type: 'game', label: '游戏/竞猜', tone: 'violet' },
   { type: 'lucky_box', label: '福袋', tone: 'amber' },

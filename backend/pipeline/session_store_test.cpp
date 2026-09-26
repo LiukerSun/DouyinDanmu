@@ -120,14 +120,15 @@ void sessions_track_boundaries_and_stats() {
     deliver(store, frame("111", r1, behavior("l1", "like", T + 20000)), behavior("l1", "like", T + 20000));
     deliver(store, frame("111", r1, online("o1", 8, T + 30000)), online("o1", 8, T + 30000));
     deliver(store, frame("111", r1, online("o2", 12, T + 40000)), online("o2", 12, T + 40000));
+    deliver(store, frame("111", r1, behavior("sc1", "screen_chat", T + 45000)), behavior("sc1", "screen_chat", T + 45000));
     auto list = store.sessions("111", {});
     check(list.at("total") == "1" && list["items"][0]["status"] == "live", "First activity must open a live session");
     check(list["items"][0]["started_at_ms"] == T && list["items"][0]["start_source"] == "activity" &&
           list["items"][0]["room_id"] == r1, "Session must anchor at the first observed event");
     auto stats = list["items"][0]["stats"];
-    check(stats["chat_count"] == "1" && stats["gift_events"] == "1" && stats["gift_quantity"] == "2" &&
+    check(stats["chat_count"] == "2" && stats["gift_events"] == "1" && stats["gift_quantity"] == "2" &&
           stats["known_gift_value"] == "20" && stats["value_complete"] == true,
-          "Open session must aggregate chat and priced gift quantity so far");
+          "Open session must aggregate chat, screen chat and priced gift quantity so far");
     check(stats["like_count"] == "5" && stats["peak_online"] == 12 && stats["enter_count"] == "0",
           "Likes must sum and peak online must track the maximum observation");
 
@@ -233,7 +234,9 @@ void sessions_backfill_from_journal() {
             auto e5 = body("e5", "aaa", "room-a2", "chat", T + 5000);
             auto e6 = body("e6", "bbb", "room-b1", "online_count", T + 6000); e6["online_count"] = 42;
             auto e7 = body("e7", "demo", "room-d1", "chat", T + 7000);
-            const Row rows[] = {{1,"aaa",e1},{2,"aaa",e2},{3,"aaa",e3},{4,"aaa",e4},{5,"aaa",e5},{6,"bbb",e6},{7,"demo",e7}};
+            auto e8 = body("e8", "aaa", "room-a2", "screen_chat", T + 4500);
+            // Backfill replays in journal order; keep the timeline ordered by id.
+            const Row rows[] = {{1,"aaa",e1},{2,"aaa",e2},{3,"aaa",e3},{4,"aaa",e4},{5,"aaa",e8},{6,"aaa",e5},{7,"bbb",e6},{8,"demo",e7}};
             for (const auto& row : rows) {
                 Statement q(legacy, "INSERT INTO events(id,event_id,live_id,body) VALUES(?,?,?,?)");
                 q.num(1, row.id).text(2, row.event.at("event_id").get<std::string>()).text(3, row.live).text(4, row.event.dump()).row();
@@ -242,6 +245,11 @@ void sessions_backfill_from_journal() {
                 // One fact row projected before like_count existed; the v2 migration must repair it.
                 Statement q(legacy, "INSERT INTO analytics_events(seq,event_id,live_id,user_id,user_name,occurred_at_ms,kind,gift_quantity,gift_unit_price,recipient_id,user_level,fans_club) VALUES(4,'e4','aaa','123','观众',?,'like',0,NULL,'',NULL,'null')");
                 q.num(1, T + 4000).row();
+            }
+            {
+                // A screen chat fact projected before it counted as chat; v3 must reclassify it.
+                Statement q(legacy, "INSERT INTO analytics_events(seq,event_id,live_id,user_id,user_name,occurred_at_ms,kind,gift_quantity,gift_unit_price,recipient_id,user_level,fans_club) VALUES(5,'e8','aaa','123','观众',?,'screen_chat',0,NULL,'',NULL,'null')");
+                q.num(1, T + 4500).row();
             }
             if (sqlite3_exec(legacy, "INSERT INTO schema_migrations VALUES('analytics_v1')", nullptr, nullptr, nullptr) != SQLITE_OK)
                 throw std::runtime_error(sqlite3_errmsg(legacy));
@@ -257,6 +265,7 @@ void sessions_backfill_from_journal() {
               aaa["items"][0]["start_source"] == "backfill" && aaa["items"][0]["end_source"] == "backfill",
               "A stopped room must have its last session closed at the final observed event");
         check(aaa["items"][0]["stats"]["like_count"] == "7", "The v2 migration must repair like counts on old fact rows");
+        check(aaa["items"][0]["stats"]["chat_count"] == "1", "The v3 migration must reclassify screen chat facts as chat");
         check(aaa["items"][1]["started_at_ms"] == T + 1000 && aaa["items"][1]["ended_at_ms"] == T + 3000 &&
               aaa["items"][1]["end_source"] == "backfill", "The labeled end-of-live event must close the first session");
         check(aaa["items"][1]["stats"]["peak_online"] == 30, "Backfill must recover peak online from the journal");

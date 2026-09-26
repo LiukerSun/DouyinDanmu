@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Avatar as HeroAvatar, Button, Card, Checkbox, Chip, EmptyState, Label, Link, Modal, TextArea, Toast, Tooltip, Spinner } from '@heroui/react'
-import { AppstoreOutlined, ArrowLeftOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, MenuFoldOutlined, DatabaseOutlined, MessageOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, SearchOutlined, SettingOutlined, ThunderboltFilled, UserOutlined, WarningOutlined, WifiOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, ArrowLeftOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, MenuFoldOutlined, DatabaseOutlined, MessageOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined, PushpinFilled, PushpinOutlined, ReloadOutlined, SearchOutlined, SettingOutlined, ThunderboltFilled, TrophyOutlined, UserOutlined, WarningOutlined, WifiOutlined } from '@ant-design/icons'
 import StudioSelect from '../components/StudioSelect'
 import StudioSearch from '../components/StudioSearch'
 import StudioFilters from '../components/StudioFilters'
@@ -202,6 +202,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const activeStream = streams[active]
   const roomStates = [...(activeStream?.roomState || [])].sort((a, b) => (a.method || a.type).localeCompare(b.method || b.type))
   const onlineState = roomStates.find(event => event.type === 'online_count')
+  const audienceRanks = onlineState?.audience_ranks?.length ? onlineState.audience_ranks : null
   const liveOnline = !!room && !serviceError && !!health?.collector.online && room.enabled && room.status === 'collecting' && isLive(room) && !!activeStream?.connected && !!onlineState && Date.now() - onlineState.received_at_ms < 60000
   const viewTitle = view === 'room' ? (room ? roomName(room) : '直播间详情') : view === 'archive' ? '信息汇总' : view === 'overview' ? '直播监控台' : '采集故障'
 
@@ -302,6 +303,14 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
               </dl>
               <Button size="sm" variant="secondary" onPress={() => setProfileOpen(true)}><UserOutlined />主播信息</Button>
             </div>
+            {audienceRanks && <section className="audience-rank-panel" aria-label="在线观众榜">
+              <div className="audience-rank-heading"><TrophyOutlined /><strong>在线观众榜</strong><span>按本场贡献排序 · 随在线人数消息更新</span></div>
+              <ol className="audience-rank-list">{audienceRanks.map(entry => <li key={entry.rank}>
+                <span className={'audience-rank-place' + (entry.rank <= 3 ? ' audience-rank-place-leading' : '')}>{entry.rank}</span>
+                <span className="audience-rank-name">{entry.hidden || !entry.user_name ? '神秘人' : entry.user_name}</span>
+                <span className="audience-rank-score">{entry.score.toLocaleString('zh-CN')}</span>
+              </li>)}</ol>
+            </section>}
           </div>}
           {room && <StudioFilters label="直播间内容" className="room-content-tabs" value={roomContent} onChange={setRoomContent} options={[{ id: 'messages', label: '实时消息' }, { id: 'rankings', label: '本房间排行榜' }, { id: 'sessions', label: '直播场次' }]} />}
           {roomContent === 'sessions' && room ? <RoomSessions key={room.live_id} room={room.live_id} /> : roomContent === 'rankings' && room ? <RoomRankings key={room.live_id} room={room.live_id} roomName={roomName(room)} /> : <>

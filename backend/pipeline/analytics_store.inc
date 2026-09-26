@@ -3,7 +3,7 @@
     void analytics_project(int64_t seq,const std::string& live,const json& event,const json& legacy_price=nullptr) {
         if(!feed_visible(event))return;
         const auto type=event.value("type","");
-        const auto kind=(type=="chat" || type=="emoji")?"chat":type;
+        const auto kind=(type=="chat" || type=="emoji" || type=="screen_chat")?"chat":type;
         const auto event_id=event.at("event_id").get<std::string>();
         Statement exists(db,"SELECT seq FROM analytics_events WHERE seq=?");exists.num(1,seq);if(exists.row())return;
         int64_t quantity=0;
@@ -61,6 +61,12 @@
                 exec("UPDATE analytics_events SET like_count=COALESCE((SELECT json_extract(e.body,'$.like_count') FROM events e WHERE e.id=analytics_events.seq),0) WHERE kind='like'");
                 exec("INSERT INTO schema_migrations VALUES('analytics_v2_session_metrics')");
             }
+            // Paid pinned comments (screen_chat) count as chat, like emoji messages.
+            Statement screens(db,"SELECT name FROM schema_migrations WHERE name='analytics_v3_screen_chat'");
+            if(!screens.row()) {
+                exec("UPDATE analytics_events SET kind='chat' WHERE kind='screen_chat'");
+                exec("INSERT INTO schema_migrations VALUES('analytics_v3_screen_chat')");
+            }
             exec("COMMIT");
         } catch(...){exec("ROLLBACK");throw;}
     }
@@ -100,7 +106,7 @@
         return {{"as_of_seq",std::to_string(scope.seq)},{"room",query.scope.room.empty()?json(nullptr):json(query.scope.room)},
             {"from_ms",query.scope.from_ms<0?json(nullptr):json(query.scope.from_ms)},{"to_ms",query.scope.to_ms<0?json(nullptr):json(query.scope.to_ms)},
             {"time_basis","event_timestamp"},{"time_range","[from_ms,to_ms)"},{"coverage","collected_events_only"},
-            {"value_unit","diamond"},{"value_basis","reported_gift_unit_price"},{"chat_types",json::array({"chat","emoji"})}};
+            {"value_unit","diamond"},{"value_basis","reported_gift_unit_price"},{"chat_types",json::array({"chat","emoji","screen_chat"})}};
     }
 public:
     json analytics_ranking(const AnalyticsQuery& query,bool gifts) {

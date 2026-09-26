@@ -483,6 +483,25 @@ void control_message_status() {
     check(update.at("control_status") == 1 && update.at("content") == "直播状态更新",
           "Other control statuses must remain visible without the end label");
 }
+void screen_chat_classified() {
+    const auto pinned = one("WebcastScreenChatMessage", data(2, user_wire()) + data(4, "用户的醒目留言"));
+    check(pinned.at("type") == "screen_chat" && pinned.at("content") == "用户的醒目留言",
+          "Screen chat must decode with its pinned comment content");
+    check(pinned.at("user_id") == std::to_string(sender_id) && pinned.at("user_name") == "测试用户",
+          "Screen chat must attribute the sender");
+}
+void audience_ranks_captured() {
+    const auto first = number(1, 500) + data(2, user_wire(111111)) + number(3, 1);
+    const auto second = number(1, 300) + data(2, user_wire(222222)) + number(3, 2);
+    const auto update = one("WebcastRoomUserSeqMessage", data(2, first) + data(2, second) + number(3, 789));
+    check(update.at("type") == "online_count" && update.at("online_count") == 789,
+          "Room user sequence must keep the online total");
+    const auto& ranks = update.at("audience_ranks");
+    check(ranks.size() == 2 && ranks[0].at("rank") == 1 && ranks[0].at("user_id") == "111111" &&
+          ranks[0].at("user_name") == "测试用户" && ranks[0].at("score") == 500,
+          "Audience contribution ranks must persist with the online update");
+    check(ranks[1].at("rank") == 2 && ranks[1].at("score") == 300, "All observed ranks must stay in order");
+}
 #endif
 } // namespace
 
@@ -501,6 +520,8 @@ int main() {
         named_semantic_fields();
         cdn_named_protocol_fields();
         control_message_status();
+        screen_chat_classified();
+        audience_ranks_captured();
 #endif
         std::cout << "event parser wire regression tests passed\n";
         return 0;

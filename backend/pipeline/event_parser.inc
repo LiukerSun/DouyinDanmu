@@ -115,7 +115,20 @@ static std::pair<json,json> parse(const pipeline::RawFrameEnvelope& envelope) {
                 e["content"]=share?"分享了直播间":follow?"关注了主播":"其他互动（动作 "+std::to_string(m.action())+"）";
                 e["action_evidence"]=display.key();e["share_type"]=m.sharetype();
             }
-            else if(message.method()=="WebcastRoomUserSeqMessage") { auto m=decode<RoomUserSeqMessage>(message.payload()); e["type"]="online_count"; e["online_count"]=m.total(); e["content"]="在线人数更新"; }
+            else if(message.method()=="WebcastRoomUserSeqMessage") {
+                auto m=decode<RoomUserSeqMessage>(message.payload());
+                e["type"]="online_count"; e["online_count"]=m.total(); e["content"]="在线人数更新";
+                // The server ships the room's contribution ranking with every online
+                // update. Persist the observed entries; hidden identities stay marked.
+                json ranks=json::array();
+                for(const auto& contributor:m.rankslist()) {
+                    if(ranks.size()>=20)break;
+                    ranks.push_back({{"rank",contributor.rank()},{"user_id",precise_user_id(contributor.user())},
+                        {"user_name",contributor.user().nickname()},{"score",contributor.score()}});
+                    if(contributor.ishidden())ranks.back()["hidden"]=true;
+                }
+                if(!ranks.empty())e["audience_ranks"]=ranks;
+            }
             else if(message.method()=="WebcastControlMessage") { auto m=decode<ControlMessage>(message.payload()); e["type"]="system"; e["control_status"]=m.status(); e["content"]=m.status()==3?"直播已结束":"直播状态更新"; }
         } catch(const std::exception& failure) {
             errors.push_back(message.method()+": "+failure.what());

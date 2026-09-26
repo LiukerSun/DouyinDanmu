@@ -22,11 +22,13 @@ static void sqlite_feed_visible(sqlite3_context* context,int,sqlite3_value** val
     } catch(...) { sqlite3_result_int(context,0); }
 }
 
-// Only the metric used by the room header crosses the wire. Protocol metadata,
+// Only the metrics used by the room header cross the wire. Protocol metadata,
 // raw payloads and repeated stream/ranking/configuration messages stay server-side.
 static json projected_room_state(const json& event) {
     if(event.value("type","")!="online_count" || !event.contains("online_count"))return nullptr;
-    return {{"seq",event.at("seq")},{"live_id",event.at("live_id")},
+    auto state=json{{"seq",event.at("seq")},{"live_id",event.at("live_id")},
         {"type","online_count"},{"method","WebcastRoomUserSeqMessage"},
         {"online_count",event.at("online_count")},{"received_at_ms",event.value("received_at_ms",int64_t(0))}};
+    if(event.contains("audience_ranks"))state["audience_ranks"]=event["audience_ranks"];
+    return state;
 }

@@ -3,6 +3,8 @@ WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+# The changelog is imported as ../../CHANGELOG.md from frontend/src.
+COPY CHANGELOG.md /CHANGELOG.md
 RUN npm run build
 FROM nginx:1.28-alpine
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf

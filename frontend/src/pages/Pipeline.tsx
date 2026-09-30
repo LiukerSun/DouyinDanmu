@@ -18,9 +18,15 @@ import { wealthBands, fansBands, feedMessageTypes } from '../pipeline/message-co
 import { completeRoomOrder, reorderVisibleRooms } from '../pipeline/room-order'
 import { type PipelineEvent, messageDisplayKey, messageKind, messageContent } from '../pipeline/messages'
 import { type Room, type Health, request, roomName, isLive, isStale, needsAttention, parseRoomInput, statusLabels, formatNumber as number } from '../pipeline/monitor'
+import changelogText from 'virtual:changelog-raw'
 
 import './Pipeline.css'
 import type { StudioUser } from '../auth/AuthApp'
+
+const changelogSections = changelogText.split(/\n(?=## )/).map(section => section.trim()).filter(section => section.startsWith('## ')).map(section => {
+  const [heading, ...lines] = section.split('\n')
+  return { heading: heading.replace(/^##\s*/, ''), body: lines.join('\n').trim() }
+})
 
 function RoomDragHandle({ name, handlers }: { name: string; handlers: ReturnType<ReturnType<typeof useRoomReorder>['handleProps']> }) {
   const { onKeyDown, onPointerDown, ...pointerHandlers } = handlers
@@ -73,6 +79,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const [busy, setBusy] = useState(false)
   const [addOpen, setAddOpen] = useState(false), [settingsOpen, setSettingsOpen] = useState(false), [runtimeOpen, setRuntimeOpen] = useState(false)
   const [colorGuideOpen, setColorGuideOpen] = useState(false)
+  const [changelogOpen, setChangelogOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false), [settingsRoomId, setSettingsRoomId] = useState('')
   const [roomInput, setRoomInput] = useState(''), [addError, setAddError] = useState('')
   const [removalTargets, setRemovalTargets] = useState<Room[]>([]), [removalError, setRemovalError] = useState('')
@@ -227,6 +234,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
       </nav>
       <div className="rail-bottom">
         <div className="sidebar-service"><span className={'status-dot ' + (serviceReady ? 'good' : 'warn')} /><span>{enabled.length}/{rooms.length} 间监控中</span></div>
+        {health?.version && <div className="sidebar-version"><span>v{health.version}</span><Button variant="ghost" size="sm" className="changelog-button" onPress={() => setChangelogOpen(true)}>更新记录</Button></div>}
         <div className="sidebar-user"><Tooltip delay={250}><Button variant="ghost" className="user-profile-button" aria-label="个人信息" onPress={() => { closeMobileSidebar(); onAccount() }}><HeroAvatar className="workspace-avatar"><HeroAvatar.Fallback>{Array.from(user.displayName)[0]}</HeroAvatar.Fallback></HeroAvatar><span><strong>{user.displayName}</strong><small>{user.role}</small></span></Button><Tooltip.Content placement="right">个人信息</Tooltip.Content></Tooltip></div>
       </div>
     </aside>
@@ -337,6 +345,9 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
       <section><h3>粉丝团等级</h3><div className="color-guide-swatches">{fansBands.map(band => <Chip key={band.min} className="message-chip" data-tone={band.tone}>Lv.{band.label}</Chip>)}</div><p>有灯牌资料时显示“名字-等级”；未提供名称时显示“粉丝团-等级”。星守护的灯牌也按此展示。等级颜色表示粉丝团等级，不表示会员状态。</p></section>
       <section><h3>礼物</h3><p>按礼物名称保持固定配色，相同礼物在不同房间中颜色一致。颜色仅用于辨认礼物，不表示礼物价值。</p></section>
     </div></Dialog>
+    <Dialog open={changelogOpen} onChange={setChangelogOpen} title={health?.version ? `更新记录 · 当前 v${health.version}` : '更新记录'}>
+      <div className="changelog-content">{changelogSections.map(section => <section key={section.heading} className="changelog-section"><h3>{section.heading}</h3><p>{section.body}</p></section>)}</div>
+    </Dialog>
     <Dialog open={profileOpen && !!room} onChange={setProfileOpen} title="主播信息"><div className="anchor-info">
           {room ? <div className="inspector-content">
             <div className="inspector-profile"><Avatar key={room.metadata?.anchor.avatar_url || room.live_id} room={room} /><h3>{roomName(room)}</h3><Link href={'https://live.douyin.com/' + room.live_id} target="_blank" rel="noreferrer">打开抖音直播间 <span aria-hidden="true">↗</span></Link></div>

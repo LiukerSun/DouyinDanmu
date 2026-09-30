@@ -9,6 +9,9 @@
 #include <amqp.h>
 #include <amqp_tcp_socket.h>
 #endif
+#ifndef PIPELINE_VERSION
+#define PIPELINE_VERSION "dev"
+#endif
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <zlib.h>
@@ -582,7 +585,7 @@ int main(int argc, char** argv) {
         auto send=[](httplib::Response& res,const json& data){res.set_content(data.dump(),"application/json");};
         auto internal=[&](const httplib::Request& req,httplib::Response& res){if(req.get_header_value("X-Internal-Token")!=env("INTERNAL_TOKEN","local-collector-token")){res.status=401;return false;}return true;};
         http.Get("/health/live",[&](const httplib::Request&,httplib::Response& res){send(res,{{"status","ok"}});});
-        http.Get("/api/health",[&](const httplib::Request&,httplib::Response& res){auto o=store.overview();o["redis"]=cache.healthy();o["debug_mode"]=options.debug;
+        http.Get("/api/health",[&](const httplib::Request&,httplib::Response& res){auto o=store.overview();o["redis"]=cache.healthy();o["debug_mode"]=options.debug;o["version"]=PIPELINE_VERSION;
 #ifdef PIPELINE_PORTABLE
             o["transport"]="local";o["cache_backend"]="sqlite";o["pipeline"]="Local spool → C++ Protobuf → SQLite → C++ WebSocket";
 #endif

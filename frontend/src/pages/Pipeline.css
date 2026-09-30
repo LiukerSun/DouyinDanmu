@@ -50,6 +50,12 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .global-context { margin-left: auto; display: flex; align-items: center; gap: 7px; padding-right: 25px; font-size: 12px; color: #7e748b; }
 .sidebar-label { font-size: 11px; color: #a99cbf; padding-left: 13px; }
 .sidebar-service { display: flex; align-items: center; gap: 7px; padding: 0 12px; font-size: 11px; color: #b3a7c6; }
+.sidebar-version { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 0 12px; font-size: 11px; color: #b3a7c6; font-variant-numeric: tabular-nums; }
+.console-app .changelog-button { min-height: 24px; height: 24px; padding-inline: 6px; font-size: 11px; color: #b3a7c6; }
+.console-app .changelog-button:hover { color: #ede6f7; }
+.changelog-content { display: flex; flex-direction: column; gap: 18px; }
+.changelog-section h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #433857; }
+.changelog-section p { margin: 0; white-space: pre-wrap; font-size: 12px; line-height: 1.8; color: #687386; }
 .sidebar-user { display: flex; align-items: center; gap: 3px; padding: 13px 0 15px; border-top: 1px solid #4b425e; }
 .console-app .user-profile-button { min-width: 0; flex: 1; justify-content: flex-start; gap: 9px; padding: 0 5px; height: 42px; color: #ede6f7; }
 .user-profile-button > span:last-child { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -301,7 +307,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
   .rail-link .anticon { font-size: 15px; }
   .rail-count { position: absolute; top: -3px; right: 0; }
   .rail-bottom { display: flex; }
-  .sidebar-service, .user-profile-button > span:last-child { display: none !important; }
+  .sidebar-service, .sidebar-version, .user-profile-button > span:last-child { display: none !important; }
   .console-app .user-profile-button { justify-content: center; }
   .sidebar-user { padding-bottom: 12px; }
   .studio-header { min-height: 75px; padding: 16px 12px; gap: 8px; flex-wrap: wrap; }
@@ -451,7 +457,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
   .sidebar-expanded .sidebar-label { display: inline; }
   .console-app.sidebar-expanded .rail-link { flex-direction: row; justify-content: flex-start; padding-inline: 13px; height: 42px; min-height: 42px; gap: 11px; font-size: 13px; }
   .sidebar-expanded .rail-count { position: static; }
-  .sidebar-expanded .sidebar-service, .sidebar-expanded .user-profile-button > span:last-child { display: flex !important; }
+  .sidebar-expanded .sidebar-service, .sidebar-expanded .sidebar-version, .sidebar-expanded .user-profile-button > span:last-child { display: flex !important; }
   .console-app.sidebar-expanded .user-profile-button { justify-content: flex-start; }
 }
 
@@ -465,12 +471,12 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
   overflow: hidden; white-space: nowrap; max-width: 120px; opacity: 1; visibility: visible;
   transition: max-width var(--sidebar-motion), opacity 160ms ease, transform var(--sidebar-motion), visibility 260ms;
 }
-.sidebar-service { overflow: hidden; white-space: nowrap; max-height: 24px; opacity: 1; transition: max-height var(--sidebar-motion), opacity 160ms ease, visibility 260ms; }
+.sidebar-service, .sidebar-version { overflow: hidden; white-space: nowrap; max-height: 24px; opacity: 1; transition: max-height var(--sidebar-motion), opacity 160ms ease, visibility 260ms; }
 .sidebar-collapsed .global-brand strong, .sidebar-collapsed .sidebar-label,
 .sidebar-collapsed .rail-link > span:not(.anticon), .sidebar-collapsed .user-profile-button > span:last-child {
   max-width: 0; opacity: 0; visibility: hidden; transform: translateX(-6px);
 }
-.sidebar-collapsed .sidebar-service { max-height: 0; opacity: 0; visibility: hidden; }
+.sidebar-collapsed .sidebar-service, .sidebar-collapsed .sidebar-version { max-height: 0; opacity: 0; visibility: hidden; }
 .sidebar-collapsed .global-brand, .sidebar-collapsed .user-profile-button { gap: 0; }
 .sidebar-collapsed .user-profile-button { padding-inline: 8px; }
 .sidebar-toggle-icon { transition: transform var(--sidebar-motion); }
@@ -478,7 +484,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 @media (max-width: 760px) {
   .console-app .rail-link { flex-direction: row; justify-content: flex-start; height: 42px; min-height: 42px; font-size: 13px; }
   .console-app .sidebar-label { display: inline; }
-  .console-app .sidebar-service, .console-app .user-profile-button > span:last-child { display: flex !important; }
+  .console-app .sidebar-service, .console-app .sidebar-version, .console-app .user-profile-button > span:last-child { display: flex !important; }
 }
 
 /* Shared HeroUI search controls preserve the compact workspace sizing. */

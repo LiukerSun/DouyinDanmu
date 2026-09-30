@@ -3,6 +3,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends g++ cmake make 
 WORKDIR /src
 COPY backend/proto/ proto/
 COPY backend/pipeline/ pipeline/
+# CMake reads the version from ../../VERSION relative to pipeline/.
+COPY VERSION /VERSION
 RUN cmake -S pipeline -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2 && ctest --test-dir build --output-on-failure
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends libboost-system1.74.0 libcpp-httplib0.11 libsqlite3-0 librabbitmq4 libhiredis0.14 libprotobuf32 zlib1g libssl3 ca-certificates curl && rm -rf /var/lib/apt/lists/*

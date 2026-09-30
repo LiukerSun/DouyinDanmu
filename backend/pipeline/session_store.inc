@@ -18,13 +18,35 @@
         Statement source(db,"SELECT source FROM rooms WHERE live_id=?");source.text(1,live);
         return source.row() && source.str(0)=="douyin";
     }
+    // Tail events of an ended broadcast keep its room identity. Within this
+    // cooldown they extend the ended session instead of opening a phantom one.
+    static constexpr int64_t session_tail_cooldown_ms=30LL*60*1000;
     int64_t session_activity_unlocked(const std::string& live,const std::string& room,int64_t at,const std::string& source,int64_t started_hint=0) {
         if(!session_tracked_unlocked(live))return 0;
         Statement current(db,"SELECT id,room_id FROM live_sessions WHERE live_id=? AND ended_at_ms IS NULL");current.text(1,live);
         if(!current.row()) {
-            // A plausible official start time anchors the session; anything else
-            // falls back to the first observed moment of the broadcast.
-            const auto started=started_hint>0 && started_hint>=at-12LL*3600*1000 && started_hint<=at+12LL*3600*1000?started_hint:at;
+            Statement last(db,"SELECT id,room_id,ended_at_ms FROM live_sessions WHERE live_id=? AND ended_at_ms IS NOT NULL ORDER BY ended_at_ms DESC,id DESC LIMIT 1");
+            last.text(1,live);
+            const auto last_ended=last.row()?last.number(2):int64_t(0);
+            const auto same_room=last_ended>0 && at-last_ended<=session_tail_cooldown_ms
+                && (room.empty() || last.str(1).empty() || last.str(1)==room);
+            if(same_room && source!="metadata_live") {
+                // Extend the window (+1ms keeps the last tail record inside the
+                // half-open statistics window) and adopt a first concrete identity.
+                Statement extend(db,"UPDATE live_sessions SET ended_at_ms=MAX(ended_at_ms,?+1),room_id=CASE WHEN room_id='' THEN ? ELSE room_id END WHERE id=?");
+                extend.num(1,at).text(2,room).num(3,last.number(0)).row();
+                return last.number(0);
+            }
+            if(same_room && started_hint<=last_ended) {
+                // The platform still reports the broadcast as live without a newer
+                // official start: the recorded end was a flicker. Reopen the session.
+                Statement reopen(db,"UPDATE live_sessions SET ended_at_ms=NULL,end_source=NULL,room_id=CASE WHEN room_id='' THEN ? ELSE room_id END WHERE id=?");
+                reopen.text(1,room).num(2,last.number(0)).row();
+                return last.number(0);
+            }
+            // A plausible official start time anchors the session; a hint that does
+            // not postdate the previous end is stale evidence and is discarded.
+            const auto started=started_hint>last_ended && started_hint>=at-12LL*3600*1000 && started_hint<=at+12LL*3600*1000?started_hint:at;
             Statement open(db,"INSERT INTO live_sessions(live_id,room_id,started_at_ms,start_source,created_at) VALUES(?,?,?,?,?)");
             open.text(1,live).text(2,room).num(3,started).text(4,source).num(5,now_ms()).row();
             return sqlite3_last_insert_rowid(db);
@@ -77,6 +99,44 @@
                         session_end_unlocked(live,last>0?last:now_ms(),"backfill");
                 }
                 exec("INSERT INTO schema_migrations VALUES('live_sessions_v1')");
+            }
+            Statement merged(db,"SELECT name FROM schema_migrations WHERE name='live_sessions_v2'");
+            if(!merged.row()) {
+                // The first sessions release opened a phantom session for tail events
+                // of an ended broadcast. Merge adjacent same-room sessions whose gap
+                // fits the tail cooldown; statistics re-aggregate over the window.
+                Statement lives(db,"SELECT DISTINCT live_id FROM live_sessions");
+                std::vector<std::string> migrating; while(lives.row())migrating.push_back(lives.str(0));
+                for(const auto& live:migrating) {
+                    // Buffer the rows before writing; mutating a table mid-cursor can skip rows.
+                    struct PastRow { int64_t id,started,ended,peak; std::string room,source; };
+                    std::vector<PastRow> all;
+                    {
+                        Statement rows(db,"SELECT id,room_id,COALESCE(ended_at_ms,-1),started_at_ms,COALESCE(end_source,''),peak_online FROM live_sessions WHERE live_id=? ORDER BY started_at_ms,id");
+                        rows.text(1,live);
+                        while(rows.row())all.push_back({rows.number(0),rows.number(3),rows.number(2),rows.number(5),rows.str(1),rows.str(4)});
+                    }
+                    int64_t keep_id=0,keep_ended=0,keep_peak=0;
+                    std::string keep_room;
+                    for(const auto& row:all) {
+                        if(keep_id>0 && keep_ended>0 && row.room==keep_room && row.started-keep_ended<=session_tail_cooldown_ms) {
+                            keep_peak=std::max(keep_peak,row.peak);keep_ended=row.ended>0?row.ended+1:row.ended;
+                            Statement drop(db,"DELETE FROM live_sessions WHERE id=?");drop.num(1,row.id).row();
+                            if(row.ended>0) {
+                                // +1ms keeps the phantom's last tail record inside the
+                                // half-open statistics window of the merged session.
+                                Statement upd(db,"UPDATE live_sessions SET ended_at_ms=?,end_source=?,peak_online=? WHERE id=?");
+                                upd.num(1,row.ended+1).text(2,row.source).num(3,keep_peak).num(4,keep_id).row();
+                            } else {
+                                Statement upd(db,"UPDATE live_sessions SET ended_at_ms=NULL,end_source=NULL,peak_online=? WHERE id=?");
+                                upd.num(1,keep_peak).num(2,keep_id).row();
+                            }
+                        } else {
+                            keep_id=row.id;keep_room=row.room;keep_ended=row.ended;keep_peak=row.peak;
+                        }
+                    }
+                }
+                exec("INSERT INTO schema_migrations VALUES('live_sessions_v2')");
             }
             exec("COMMIT");
         } catch(...){exec("ROLLBACK");throw;}

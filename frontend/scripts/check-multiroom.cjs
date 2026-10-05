@@ -80,6 +80,26 @@ async function main() {
     assert.equal(states.sockets[1].sent.find(item => item.live_id === 'a').after_seq, '999');
     console.log('PASS: state/configuration cannot evict behaviors; compact zero metrics, room isolation and hidden-only reconnect cursors survive replay');
   } finally { states.manager.dispose(); }
+  const ranked = setup(async id => ({ events: [], state_events: [
+    event(id, '1', { type: 'online_count', online_count: 321, audience_ranks: [] }),
+    event(id, '2', { type: 'audience_rank', audience_ranks: [{ rank: 1, user_id: id + '42', user_name: '虚构榜单用户', score: '9007199254740993' }] }),
+  ], through_seq: '2' }));
+  try {
+    ranked.manager.sync(['a', 'b']); await delay(20); ranked.sockets[0].open(); await delay(120);
+    assert.equal(ranked.state().a.roomState.length, 2);
+    const empty = event('a', '9007199254740993', { type: 'audience_rank', audience_ranks: [] });
+    ranked.sockets[0].receive({ type: 'event_batch', live_id: 'a', events: [], state_events: [empty], through_seq: empty.seq });
+    await delay(120);
+    assert.equal(ranked.state().a.roomState.find(item => item.type === 'online_count').online_count, 321);
+    assert.equal(ranked.state().a.roomState.find(item => item.type === 'audience_rank').audience_ranks.length, 0);
+    assert.equal(ranked.state().b.roomState.find(item => item.type === 'audience_rank').audience_ranks.length, 1);
+    ranked.sockets[0].close(); await delay(120); assert.equal(ranked.state().a.connected, false);
+    assert.equal(ranked.state().a.roomState.length, 2, 'Disconnect retains both last observations');
+    await delay(450); ranked.sockets[1].open(); await delay(120);
+    assert.equal(ranked.sockets[1].sent.find(item => item.live_id === 'a').after_seq, empty.seq);
+    assert.equal(ranked.state().a.connected, true);
+    console.log('PASS: expanded ranking states survive snapshot, independent totals, empty updates, room isolation and reconnect with exact cursors');
+  } finally { ranked.manager.dispose(); }
   const { messageKind, messageContent } = load('messages.ts');
   assert.equal(messageKind(event('a', '1', { type: 'social', action: 1 })), 'follow');
   assert.equal(messageKind(event('a', '1', { type: 'social', action: 3 })), 'social');

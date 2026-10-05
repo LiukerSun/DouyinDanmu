@@ -491,6 +491,9 @@ void screen_chat_classified() {
           "Screen chat must attribute the sender");
 }
 void audience_ranks_captured() {
+    const auto missing = one("WebcastRoomUserSeqMessage", data(2, data(2, user_wire(333333)) + number(3, 1)));
+    check(missing.at("audience_ranks")[0].at("score").is_null(),
+          "An omitted audience score must not appear as zero diamonds");
     const auto first = number(1, 500) + data(2, user_wire(111111)) + number(3, 1);
     const auto second = number(1, 300) + data(2, user_wire(222222)) + number(3, 2);
     const auto update = one("WebcastRoomUserSeqMessage", data(2, first) + data(2, second) + number(3, 789));
@@ -498,9 +501,32 @@ void audience_ranks_captured() {
           "Room user sequence must keep the online total");
     const auto& ranks = update.at("audience_ranks");
     check(ranks.size() == 2 && ranks[0].at("rank") == 1 && ranks[0].at("user_id") == "111111" &&
-          ranks[0].at("user_name") == "测试用户" && ranks[0].at("score") == 500,
+          ranks[0].at("user_name") == "测试用户" && ranks[0].at("score") == "500",
           "Audience contribution ranks must persist with the online update");
-    check(ranks[1].at("rank") == 2 && ranks[1].at("score") == 300, "All observed ranks must stay in order");
+    check(ranks[1].at("rank") == 2 && ranks[1].at("score") == "300", "All observed ranks must stay in order");
+    const auto zero = one("WebcastRoomUserSeqMessage", data(2, number(1, 0) + data(2, user_wire()) + number(3, 1)));
+    check(zero["audience_ranks"][0]["score"] == "0", "An explicit zero audience score must remain zero");
+    const auto precise = one("WebcastRoomUserSeqMessage", data(2, number(1, sender_id) + data(2, user_wire()) + number(3, 1) + data(6, "贡献已隐藏") + data(7, "精确值未公开")));
+    check(precise["audience_ranks"][0]["score"] == std::to_string(sender_id), "Audience scores must preserve all 64-bit digits");
+    check(precise["audience_ranks"][0]["score_description"] == "贡献已隐藏" && precise["audience_ranks"][0]["exactly_score"] == "精确值未公开", "Platform contribution descriptions must survive parsing");
+    check(one("WebcastRoomUserSeqMessage", number(3, 5))["audience_ranks"].empty(), "An empty online ranking is an explicit empty snapshot");
+}
+void extended_audience_ranks_captured() {
+    std::string payload;
+    for (uint64_t rank = 1; rank <= 12; ++rank)
+        payload += data(3, data(1, user_wire(1000 + rank)) + number(2, rank == 1 ? sender_id : 12 - rank) + number(3, rank));
+    const auto update = one("WebcastRoomRankMessage", payload);
+    check(update["type"] == "audience_rank" && update["audience_rank_source"] == "room_rank", "RoomRankMessage must publish its own ranking state");
+    check(!update.contains("online_count") && update["user_id"] == "", "Rankings cannot replace online totals or invent a sender");
+    check(update["audience_ranks"].size() == 12 && update["audience_ranks_total"] == 12, "Extended audience lists must include more than three users");
+    check(update["audience_ranks"][0]["score"] == std::to_string(sender_id) && update["audience_ranks"][11]["score"] == "0", "Extended scores preserve precision and explicit zero");
+    const auto missing = one("WebcastRoomRankMessage", data(3, data(1, user_wire()) + number(3, 1) + data(8, "1.2万贡献") + data(9, "12000")));
+    check(missing["audience_ranks"][0]["score"].is_null() && missing["audience_ranks"][0]["score_description"] == "1.2万贡献" && missing["audience_ranks"][0]["exactly_score"] == "12000", "Extended omitted scores and platform text stay distinct");
+    const auto hidden = one("WebcastRoomRankMessage", data(3, data(1, user_wire()) + number(3, 1) + number(7, 1)));
+    check(hidden["audience_ranks"][0]["hidden"] == true, "Extended anonymous users keep their hidden flag");
+    const auto legacy = one("WebcastRoomRankMessage", data(2, data(1, user_wire()) + data(2, "10钻石") + number(3, 1)));
+    check(legacy["audience_ranks"].size() == 1 && legacy["audience_ranks"][0]["score"].is_null() && legacy["audience_ranks"][0]["score_description"] == "10钻石" && legacy["audience_ranks"][0]["hidden"] == true, "Legacy rank text is preserved without guessing its units");
+    check(one("WebcastRoomRankMessage", "")["audience_ranks"].empty(), "An empty extended ranking clears its last snapshot");
 }
 #endif
 } // namespace
@@ -522,6 +548,7 @@ int main() {
         control_message_status();
         screen_chat_classified();
         audience_ranks_captured();
+        extended_audience_ranks_captured();
 #endif
         std::cout << "event parser wire regression tests passed\n";
         return 0;

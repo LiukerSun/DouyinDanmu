@@ -31,6 +31,8 @@
 
 进入单个直播间后，点击“本房间排行榜”查看弹幕榜和礼物榜，按今天、近 7 天或全部已采集记录筛选；榜单和用户明细均限定在该房间。切换到“直播场次”按每次开播查看场次列表（开播时间、状态、收入钻石、峰值观看），场次详情内含弹幕记录、礼物记录与贡献榜。参数、统计口径、场次划分和历史回填说明见 [观众统计接口](backend/pipeline/analytics-api.md)。
 
+“在线观众榜”展示平台下发的当前贡献榜，默认前 10 位，可选择 20 / 50 / 100 位或自定义 1–100 位，按账号在当前浏览器保存偏好。榜单可滚动、收起，贡献缺失时显示“未提供”，匿名贡献显示“未公开”；数值及文字沿用平台提供的内容。设置人数是展示上限，实际人数取决于平台下发，配置 Cookie 也不能保证获得完整名单或贡献值。实现和验证说明见 [在线观众榜开发设计](docs/audience-ranking.md)。
+
 ## 界面预览
 
 从多房间总览进入单个直播间，再到跨房间的历史记录查询。点击截图可查看原图。
@@ -52,7 +54,7 @@
 
 ## Windows 便携版
 
-[下载 v2.1.3 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.3/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.1.3/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.1.3)
+[下载 v2.4.0 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.4.0/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.4.0/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.4.0)
 
 系统要求：**Windows 10（1903 或更新版本）/ Windows 11，x64**。运行环境已包含在发布包中，无需安装 Docker、Node.js、数据库或编译器。
 

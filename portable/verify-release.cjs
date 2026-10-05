@@ -6,6 +6,7 @@ const { spawn } = require('node:child_process');
 const net = require('node:net');
 const crypto = require('node:crypto');
 const release = path.resolve(process.argv[2]);
+const expectedVersion = process.argv[3];
 const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), '直播台 便携验收-'));
 const app = path.join(testRoot, '解压目录 with spaces');
 fs.cpSync(release, app, { recursive: true, filter: source => !source.startsWith(path.join(release, 'data')) && !source.startsWith(path.join(release, 'logs')) });
@@ -36,7 +37,9 @@ function run(file,args=[]) { const child=spawn(file,args,{cwd:app,env,windowsHid
   const page=await fetch(base+'/');assert.equal(page.status,200);assert((await page.text()).includes('root'));
   assert.equal((await request('/api/auth/setup','POST',{username:'portable-check',displayName:'便携验收',password:'Portable-test-2026!'})).status,200);
   await until(async()=>(await request('/api/health')).data.collector.online,'collector heartbeat');
-  assert.equal((await request('/api/health')).data.transport,'local');
+  const health=(await request('/api/health')).data;
+  assert.equal(health.transport,'local');
+  if(expectedVersion)assert.equal(health.version,expectedVersion,'The packaged backend must report the release version');
   const duplicate=run(path.join(app,'DouyinDanmu.exe'),['--port',String(port),'--no-browser']);await until(()=>duplicate.exitCode!==null,'duplicate launch');assert.notEqual(duplicate.exitCode,0);
   assert.equal((await request('/api/rooms','POST',{live_id:'demo'})).status,202);
   const batch=await new Promise((resolve,reject)=>{const ws=new WebSocket(base.replace('http:','ws:')+'/ws',{headers:{Cookie:cookie,Origin:base}});const timeout=setTimeout(()=>{ws.close();reject(Error('WebSocket timeout'));},15000);ws.on('open',()=>ws.send(JSON.stringify({action:'subscribe',live_id:'demo',after_seq:'0'})));ws.on('message',raw=>{const value=JSON.parse(raw);if(value.type==='event_batch'&&value.events.length){clearTimeout(timeout);ws.close();resolve(value);}});ws.on('error',reject);});

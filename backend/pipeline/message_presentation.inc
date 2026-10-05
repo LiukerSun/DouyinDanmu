@@ -22,13 +22,30 @@ static void sqlite_feed_visible(sqlite3_context* context,int,sqlite3_value** val
     } catch(...) { sqlite3_result_int(context,0); }
 }
 
-// Only the metrics used by the room header cross the wire. Protocol metadata,
-// raw payloads and repeated stream/ranking/configuration messages stay server-side.
+// Header metrics and compact audience ranks cross the wire; complete protocol
+// payloads and other configuration messages remain in storage.
 static json projected_room_state(const json& event) {
-    if(event.value("type","")!="online_count" || !event.contains("online_count"))return nullptr;
+    const auto type=event.value("type","");
+    if(type!="online_count" && type!="audience_rank")return nullptr;
+    if(type=="online_count" && !event.contains("online_count"))return nullptr;
+    if(type=="audience_rank" && (!event.contains("audience_ranks") || !event["audience_ranks"].is_array()))return nullptr;
     auto state=json{{"seq",event.at("seq")},{"live_id",event.at("live_id")},
-        {"type","online_count"},{"method","WebcastRoomUserSeqMessage"},
-        {"online_count",event.at("online_count")},{"received_at_ms",event.value("received_at_ms",int64_t(0))}};
-    if(event.contains("audience_ranks"))state["audience_ranks"]=event["audience_ranks"];
+        {"type",type},{"method",type=="online_count"?"WebcastRoomUserSeqMessage":"WebcastRoomRankMessage"},
+        {"received_at_ms",event.value("received_at_ms",int64_t(0))}};
+    if(type=="online_count")state["online_count"]=event.at("online_count");
+    if(event.contains("audience_ranks") && event["audience_ranks"].is_array()) {
+        state["audience_rank_source"]=event.value("audience_rank_source",type=="online_count"?"room_user_seq":"room_rank");
+        state["audience_ranks_total"]=event.value("audience_ranks_total",event["audience_ranks"].size());
+        state["audience_ranks"]=json::array();
+        for(const auto& entry:event["audience_ranks"]) {
+            if(state["audience_ranks"].size()>=100)break;
+            auto projected=entry;
+            if(projected.value("hidden",false)) {
+                projected["user_id"]="";projected["user_name"]="";projected["score"]=nullptr;
+                projected.erase("score_description");projected.erase("exactly_score");
+            }
+            state["audience_ranks"].push_back(std::move(projected));
+        }
+    }
     return state;
 }

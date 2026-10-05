@@ -726,6 +726,7 @@ void late_connection_status_cannot_override_active_stream() {
 }
 
 #include "analytics_test.inc"
+#include "audience_rank_test.inc"
 #include "gift_group_identity_test.inc"
 #include "store_recovery_test.inc"
 #include "gift_fact_repair_test.inc"
@@ -748,6 +749,7 @@ int main() {
         gift_group_repair_separates_recipients_and_skips_unproven_groups();
         gift_group_repair_rolls_back_all_projections();
         audience_analytics();
+        audience_rank_delivery();
         analytics_backfill_and_precision();
         analytics_query_validation();
         late_connection_status_cannot_override_active_stream();

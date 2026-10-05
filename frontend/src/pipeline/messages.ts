@@ -63,16 +63,23 @@ export function isFeedMessage(event: PipelineEvent): boolean {
   if (event.type === 'notice' && (!event.method || ['WebcastCommonTextMessage', 'WebcastNotifyMessage'].includes(event.method))) return !!event.content?.trim() && !['公共文本', '通知'].includes(event.content)
   return false
 }
-export type AudienceRank = { rank: number; user_id: string; user_name: string; score: number; hidden?: boolean }
-export type RoomStateEvent = Pick<PipelineEvent, 'seq' | 'live_id' | 'type' | 'method' | 'online_count' | 'received_at_ms'> & { audience_ranks?: AudienceRank[] }
-// Only header metrics are delivered; protocol/configuration history stays in storage.
-export const isRoomState = (event: RoomStateEvent) => event.type === 'online_count' && event.online_count != null
+export type AudienceRank = { rank: number; user_id: string; user_name: string; score: string | number | null; hidden?: boolean; score_description?: string; exactly_score?: string }
+export type RoomStateEvent = Pick<PipelineEvent, 'seq' | 'live_id' | 'type' | 'method' | 'online_count' | 'received_at_ms'> & {
+  audience_ranks?: AudienceRank[]; audience_rank_source?: 'room_user_seq' | 'room_rank'; audience_ranks_total?: number
+}
+// Compact ranks are independent of online totals; configuration stays in storage.
+export const isRoomState = (event: RoomStateEvent) => event.type === 'online_count' && event.online_count != null || event.type === 'audience_rank' && Array.isArray(event.audience_ranks)
 export function mergeRoomState(previous: RoomStateEvent[], incoming: RoomStateEvent[], liveId: string): RoomStateEvent[] {
   const latest = new Map<string, RoomStateEvent>()
   for (const event of [...previous, ...incoming]) {
     if (event.live_id !== liveId || !isRoomState(event)) continue
     const key = event.type, current = latest.get(key)
-    if (!current || BigInt(event.seq) > BigInt(current.seq)) latest.set(key, { seq: event.seq, live_id: event.live_id, type: event.type, method: 'WebcastRoomUserSeqMessage', online_count: event.online_count, received_at_ms: event.received_at_ms, ...(event.audience_ranks?.length ? { audience_ranks: event.audience_ranks } : {}) })
+    if (!current || BigInt(event.seq) > BigInt(current.seq)) latest.set(key, {
+      seq: event.seq, live_id: event.live_id, type: event.type,
+      method: event.type === 'audience_rank' ? 'WebcastRoomRankMessage' : 'WebcastRoomUserSeqMessage',
+      ...(event.type === 'online_count' ? { online_count: event.online_count } : {}), received_at_ms: event.received_at_ms,
+      ...(Array.isArray(event.audience_ranks) ? { audience_ranks: event.audience_ranks, audience_rank_source: event.audience_rank_source, audience_ranks_total: event.audience_ranks_total } : {}),
+    })
   }
   return [...latest.values()].sort((a, b) => BigInt(a.seq) < BigInt(b.seq) ? -1 : BigInt(a.seq) > BigInt(b.seq) ? 1 : 0)
 }

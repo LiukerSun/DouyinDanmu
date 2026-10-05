@@ -1,5 +1,11 @@
 # Protobuf 增量解析
 
+## 在线观众榜（2026-10-05，解析器版本 9）
+
+`RoomUserSeqMessageContributor.score` 和 `AudienceRank.score` 保持原 wire 编号与整数类型，增加 presence 以区分字段缺失和明确的 0。业务输出使用精确十进制字符串或 null，并保留 `score_description` / `exactly_score`。贡献单位沿用平台文字，不把无单位的数值自动解释为钻石。
+
+`WebcastRoomRankMessage` 的重复 `audience_ranks` 作为独立榜单状态进入快照和增量推送，兼容只有旧 `ranksList` 的载荷。前端投影最多 100 位，隐藏条目的昵称、UID 和贡献信息不进入投影，完整原始载荷保留在协议详情。此变更用于新收到的消息，无需数据库迁移或重算历史统计；已保存的旧观众榜随新消息更新。开发设计和验证见 [在线观众榜开发设计](../../docs/audience-ranking.md)。
+
 2026-09-09：参考 [Protobuf 逆向解析两种方法](https://www.cnblogs.com/wyc-1009/p/17547994.html)，使用本机构建的 `protoc --decode_raw` 核对保存的消息载荷，再更新 C++ 解析。运行时继续使用已有 Protobuf 库，不增加 Python 或 blackboxprotobuf 依赖。
 
 **解码过程零失败不等于完整解析。** 第一轮仅增加结构候选与少量消息头；当时 939 条样本全部仍为 partial。本轮进一步补全高频的有名字段和嵌套类型，以剩余未知字段、实际 decoded/partial 数量衡量效果。

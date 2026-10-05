@@ -94,7 +94,7 @@ message CommonTextMessage {
   string scene = 3;
 }
 message RoomUserSeqMessageContributor {
-  uint64 score = 1;
+  optional uint64 score = 1;
   User user = 2;
   uint64 rank = 3;
   uint64 delta = 4;
@@ -5233,7 +5233,7 @@ message RoomRankMessage {
 }
 message AudienceRank {
   User user = 1;
-  int64 score = 2;
+  optional int64 score = 2;
   int64 rank = 3;
   string gap_description = 4;
   int64 delta = 5;

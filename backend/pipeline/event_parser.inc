@@ -16,6 +16,15 @@ static std::string precise_user_id(const User& user) {
     if(!value.empty() && value.find_first_not_of("0123456789")==std::string::npos && value.find_first_not_of('0')!=std::string::npos)return value;
     return "";
 }
+static json audience_rank_entry(const User& user,json rank,json score,bool hidden,
+                                const std::string& description,const std::string& exact) {
+    auto entry=json{{"rank",std::move(rank)},{"user_id",precise_user_id(user)},
+        {"user_name",user.nickname()},{"score",std::move(score)}};
+    if(hidden)entry["hidden"]=true;
+    if(!description.empty())entry["score_description"]=description;
+    if(!exact.empty())entry["exactly_score"]=exact;
+    return entry;
+}
 static void user_fields(json& e, const User& user, const Common& common) {
     e["user_id"]=precise_user_id(user); e["user_name"]=user.nickname();
     e["user_level"]=nullptr;
@@ -118,16 +127,25 @@ static std::pair<json,json> parse(const pipeline::RawFrameEnvelope& envelope) {
             else if(message.method()=="WebcastRoomUserSeqMessage") {
                 auto m=decode<RoomUserSeqMessage>(message.payload());
                 e["type"]="online_count"; e["online_count"]=m.total(); e["content"]="在线人数更新";
-                // The server ships the room's contribution ranking with every online
-                // update. Persist the observed entries; hidden identities stay marked.
                 json ranks=json::array();
                 for(const auto& contributor:m.rankslist()) {
-                    if(ranks.size()>=20)break;
-                    ranks.push_back({{"rank",contributor.rank()},{"user_id",precise_user_id(contributor.user())},
-                        {"user_name",contributor.user().nickname()},{"score",contributor.score()}});
-                    if(contributor.ishidden())ranks.back()["hidden"]=true;
+                    ranks.push_back(audience_rank_entry(contributor.user(),contributor.rank(),
+                        contributor.has_score()?json(std::to_string(contributor.score())):json(nullptr),
+                        contributor.ishidden(),contributor.scoredescription(),contributor.exactlyscore()));
                 }
-                if(!ranks.empty())e["audience_ranks"]=ranks;
+                e["audience_rank_source"]="room_user_seq";e["audience_ranks_total"]=ranks.size();e["audience_ranks"]=std::move(ranks);
+            }
+            else if(message.method()=="WebcastRoomRankMessage") {
+                auto m=decode<RoomRankMessage>(message.payload());
+                e["type"]="audience_rank";e["content"]="观众榜更新";
+                json ranks=json::array();
+                for(const auto& entry:m.audience_ranks())
+                    ranks.push_back(audience_rank_entry(entry.user(),entry.rank(),
+                        entry.has_score()?json(std::to_string(entry.score())):json(nullptr),
+                        entry.is_hidden(),entry.score_description(),entry.exactly_score()));
+                if(m.audience_ranks().empty())for(const auto& entry:m.rankslist())
+                    ranks.push_back(audience_rank_entry(entry.user(),ranks.size()+1,nullptr,entry.profilehidden(),entry.scorestr(),""));
+                e["audience_rank_source"]="room_rank";e["audience_ranks_total"]=ranks.size();e["audience_ranks"]=std::move(ranks);
             }
             else if(message.method()=="WebcastControlMessage") { auto m=decode<ControlMessage>(message.payload()); e["type"]="system"; e["control_status"]=m.status(); e["content"]=m.status()==3?"直播已结束":"直播状态更新"; }
         } catch(const std::exception& failure) {

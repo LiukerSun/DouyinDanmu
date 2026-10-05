@@ -59,7 +59,8 @@
 /.cache/
 /.codex/
 /.claude/
-/docs/
+/docs/*
+!/docs/audience-ranking.md
 /DESIGN.md
 .vs/
 .idea/

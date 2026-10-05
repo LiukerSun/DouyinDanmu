@@ -110,6 +110,7 @@ public:
           CREATE TABLE IF NOT EXISTS room_metadata(live_id TEXT PRIMARY KEY,body TEXT NOT NULL,checked_at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS message_views(live_id TEXT NOT NULL,display_id TEXT NOT NULL,last_seq INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(live_id,display_id));
           CREATE INDEX IF NOT EXISTS message_views_room_seq ON message_views(live_id,last_seq);
+          CREATE INDEX IF NOT EXISTS message_views_room_state ON message_views(live_id,json_extract(body,'$.type'),last_seq DESC) WHERE json_extract(body,'$.type') IN ('online_count','audience_rank');
           CREATE INDEX IF NOT EXISTS message_views_gift_group ON message_views(live_id,json_extract(body,'$.gift_group_key'));
           CREATE TABLE IF NOT EXISTS gift_totals(live_id TEXT PRIMARY KEY,quantity INTEGER NOT NULL DEFAULT 0);
           CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY);
@@ -184,8 +185,10 @@ public:
         Statement q(db,"SELECT last_seq,body FROM message_views WHERE live_id=? AND feed_visible(body) ORDER BY last_seq DESC LIMIT 100");q.text(1,live);
         json list=json::array(),latest=json::array();
         while(q.row()) {auto e=json::parse(q.str(1));e["seq"]=std::to_string(q.number(0));list.push_back(e);}
-        Statement state(db,"SELECT last_seq,body FROM message_views WHERE live_id=? AND json_extract(body,'$.type')='online_count' AND json_extract(body,'$.online_count') IS NOT NULL ORDER BY last_seq DESC LIMIT 1");state.text(1,live);
-        if(state.row()){auto e=json::parse(state.str(1));e["seq"]=std::to_string(state.number(0));latest.push_back(projected_room_state(e));}
+        for(const char* type:{"online_count","audience_rank"}) {
+            Statement state(db,"SELECT last_seq,body FROM message_views WHERE live_id=? AND json_extract(body,'$.type')=? AND json_extract(body,'$.type') IN ('online_count','audience_rank') AND (json_extract(body,'$.online_count') IS NOT NULL OR json_type(body,'$.audience_ranks')='array') ORDER BY last_seq DESC LIMIT 1");state.text(1,live).text(2,type);
+            if(state.row()){auto e=json::parse(state.str(1));e["seq"]=std::to_string(state.number(0));auto projected=projected_room_state(e);if(!projected.is_null())latest.push_back(std::move(projected));}
+        }
         std::reverse(list.begin(),list.end());return {{"events",list},{"state_events",latest},{"through_seq",std::to_string(high)},{"stats",stats_unlocked(live)}};
     }
     #include "message_search_store.inc"
@@ -193,12 +196,12 @@ public:
     json frontend_batch(const std::string& live,int64_t after,int limit=200) {
         std::lock_guard<std::mutex> guard(mutex);
         const auto journal=events_unlocked(live,after,limit,true);
-        json visible=json::array(),states=json::array(),latest=nullptr;
+        json visible=json::array(),states=json::array(),latest=json::object();
         for(const auto& event:journal) {
             if(feed_visible(event))visible.push_back(event);
-            auto state=projected_room_state(event);if(!state.is_null())latest=std::move(state);
+            auto state=projected_room_state(event);if(!state.is_null()){const auto type=state.at("type").get<std::string>();latest[type]=std::move(state);}
         }
-        if(!latest.is_null())states.push_back(std::move(latest));
+        for(const char* type:{"online_count","audience_rank"})if(latest.contains(type))states.push_back(std::move(latest[type]));
         // Advance over hidden-only batches too, including on reconnect. Using
         // visible.back() here would replay configuration forever or skip actions.
         return {{"events",visible},{"state_events",states},{"through_seq",journal.empty()?std::to_string(after):journal.back().at("seq").get<std::string>()}};

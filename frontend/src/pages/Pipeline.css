@@ -56,6 +56,43 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .changelog-content { display: flex; flex-direction: column; gap: 18px; }
 .changelog-section h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #433857; }
 .changelog-section p { margin: 0; white-space: pre-wrap; font-size: 12px; line-height: 1.8; color: #687386; }
+.console-app .update-notice { margin-left: auto; margin-right: 16px; min-height: 30px; color: #5443bf; background: #efecff; font-size: 12px; white-space: nowrap; }
+.update-notice + .global-context { margin-left: 0; }
+.update-panel { display: flex; flex-direction: column; gap: 16px; }
+.update-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.update-heading h3 { margin: 0; font-size: 17px; font-weight: 600; color: #433857; overflow-wrap: anywhere; }
+.update-heading .button { flex: none; }
+.update-versions { display: flex; flex-wrap: wrap; gap: 16px 42px; padding-block: 4px; font-variant-numeric: tabular-nums; }
+.update-versions > div { display: flex; flex-direction: column; gap: 5px; }
+.update-versions dt, .update-checked { font-size: 12px; color: #687386; }
+.update-versions dd { font-size: 15px; font-weight: 600; color: #433857; }
+.update-release-notes { padding-top: 16px; border-top: 1px solid #e7e4f2; }
+.update-release-notes h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #433857; }
+.update-release-notes p { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; color: #5c6173; }
+.update-install-note, .update-progress p { font-size: 12px; line-height: 1.75; color: #687386; }
+.update-progress { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-block: 16px; border-block: 1px solid #e7e4f2; }
+.update-progress strong { font-size: 14px; color: #514d75; }
+.update-progress progress { display: block; width: 100%; height: 8px; appearance: none; border: 0; border-radius: 4px; overflow: hidden; background: #eeebf7; accent-color: #6155d9; }
+.update-progress progress::-webkit-progress-bar { background: #eeebf7; }
+.update-progress progress::-webkit-progress-value { background: #6155d9; }
+.update-progress progress::-moz-progress-bar { background: #6155d9; }
+.update-progress > span { font-size: 12px; color: #687386; font-variant-numeric: tabular-nums; }
+.update-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.update-github { display: inline-flex; align-items: center; gap: 7px; color: #6155d9; font-size: 13px; text-underline-offset: 3px; }
+.update-github:hover { text-decoration: underline; }
+.installed-changelog { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e7e4f2; }
+.installed-changelog > summary { color: #514d75; font-size: 13px; }
+.installed-changelog[open] > summary { margin-bottom: 18px; }
+@media (max-width: 760px) {
+  .console-app .update-notice { margin-right: 12px; padding-inline: 10px; }
+  .update-notice-version { display: none; }
+}
+@media (max-width: 450px) {
+  .update-heading { flex-wrap: wrap; }
+  .update-heading h3 { width: 100%; }
+  .update-actions { align-items: stretch; flex-direction: column; gap: 14px; }
+  .update-github { align-self: flex-start; }
+}
 .sidebar-user { display: flex; align-items: center; gap: 3px; padding: 13px 0 15px; border-top: 1px solid #4b425e; }
 .console-app .user-profile-button { min-width: 0; flex: 1; justify-content: flex-start; gap: 9px; padding: 0 5px; height: 42px; color: #ede6f7; }
 .user-profile-button > span:last-child { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }

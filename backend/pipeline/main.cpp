@@ -35,10 +35,12 @@ namespace net = boost::asio;
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
 using tcp = net::ip::tcp;
-static std::atomic<bool> running{true}, mq_ready{false};
+static std::atomic<bool> running{true}, mq_ready{false}, vacuum_requested{false}, vacuum_running{false}, startup_ready{false};
 static int64_t now_ms() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(); }
 static std::string env(const char* key, const char* fallback) { const char* v = std::getenv(key); return v ? v : fallback; }
 #include "sha256.inc"
+#include "gzip_codec.inc"
+#include "body_codec.inc"
 
 #ifndef PIPELINE_PORTABLE
 static std::string bytes(amqp_bytes_t b) { return std::string(static_cast<char*>(b.bytes), b.len); }
@@ -56,7 +58,27 @@ public:
     int64_t number(int i) { return sqlite3_column_int64(stmt, i); }
     std::string str(int i) { auto p = sqlite3_column_text(stmt, i); return p ? reinterpret_cast<const char*>(p) : ""; }
     std::string binary(int i) { auto p=sqlite3_column_blob(stmt,i);return p?std::string(static_cast<const char*>(p),sqlite3_column_bytes(stmt,i)):""; }
+    // Blob-safe read of a body column with transparent decompression. str()
+    // truncates at the first embedded NUL, which gzip output contains.
+    std::string decoded(int i) {
+        const auto type=sqlite3_column_type(stmt,i);
+        if(type==SQLITE_NULL) return "";
+        auto raw=binary(i);
+        if(type==SQLITE_BLOB && !is_compressed_body(raw.data(),raw.size())) throw std::runtime_error("undecodable body");
+        return decode_body(raw);
+    }
+    int stored_type(int i) { return sqlite3_column_type(stmt,i); }
 };
+// Bind a JSON body in its stored form: plain TEXT under the size floor or when
+// COMPRESSION=off, gzip BLOB otherwise.
+static void bind_body(Statement& s, int i, const std::string& plain) {
+    if(body_stays_text(plain)) s.text(i,plain); else s.blob(i,gzip_encode(plain));
+}
+// Rebind a previously captured raw value in its original representation, for
+// optimistic-concurrency clauses like WHERE body=?.
+static void bind_stored(Statement& s, int i, const std::string& raw, int type) {
+    if(type==SQLITE_BLOB) s.blob(i,raw); else s.text(i,raw);
+}
 
 #include "message_search.inc"
 #include "message_presentation.inc"
@@ -65,7 +87,9 @@ public:
 
 class Store {
     sqlite3* db = nullptr;
-    std::mutex mutex;
+    std::string database_path;
+    std::mutex mutex, maintenance_mutex;
+    json maintenance_snapshot=json::object();
     void exec(const char* sql) { char* err = nullptr; if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) { std::string message = err ? err : "database failure"; sqlite3_free(err); throw std::runtime_error(message); } }
     json stats_unlocked(const std::string& live) {
         Statement q(db, "SELECT chat,gift,enter_count,likes,online,total,COALESCE((SELECT quantity FROM gift_totals WHERE live_id=rooms.live_id),0) FROM rooms WHERE live_id=?"); q.text(1, live);
@@ -75,8 +99,9 @@ class Store {
     json events_unlocked(const std::string& live, int64_t after, int limit, bool presentation=false) {
         Statement q(db, "SELECT e.id,e.body,p.fields FROM events e LEFT JOIN event_presentations p ON p.event_id=e.event_id WHERE e.live_id=? AND e.id>? ORDER BY e.id LIMIT ?"); q.text(1,live).num(2,after).num(3,limit);
         json list = json::array(); while(q.row()) {
-            auto e = json::parse(q.str(1));
-            if(presentation && !q.str(2).empty())e.update(json::parse(q.str(2)));
+            auto e = json::parse(q.decoded(1));
+            const auto overlay=q.decoded(2);
+            if(presentation && !overlay.empty())e.update(json::parse(overlay));
             e["seq"] = std::to_string(q.number(0)); list.push_back(e);
         } return list;
     }
@@ -86,18 +111,19 @@ class Store {
             if(!fact.contains(it.key()) || fact.at(it.key())!=it.value())fields[it.key()]=it.value();
         if(fields.empty())return;
         Statement insert(db,"INSERT INTO event_presentations(event_id,fields) VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET fields=excluded.fields");
-        insert.text(1,fact.at("event_id")).text(2,fields.dump()).row();
+        insert.text(1,fact.at("event_id")); bind_body(insert,2,fields.dump()); insert.row();
     }
     #include "connection_state_store.inc"
     #include "analytics_store.inc"
     #include "session_store.inc"
 public:
     Store() {
-        auto path = env("DATABASE_PATH", "/data/pipeline.db"); std::filesystem::create_directories(std::filesystem::path(path).parent_path());
-        if (sqlite3_open(path.c_str(), &db) != SQLITE_OK) throw std::runtime_error("Cannot open database");
+        database_path = env("DATABASE_PATH", "/data/pipeline.db"); std::filesystem::create_directories(std::filesystem::path(database_path).parent_path());
+        if (sqlite3_open(database_path.c_str(), &db) != SQLITE_OK) throw std::runtime_error("Cannot open database");
         sqlite3_busy_timeout(db, 3000);
         if(sqlite3_create_function_v2(db,"feed_visible",1,SQLITE_UTF8|SQLITE_DETERMINISTIC,nullptr,sqlite_feed_visible,nullptr,nullptr,nullptr)!=SQLITE_OK)
             throw std::runtime_error("Cannot register presentation policy");
+        register_body_codecs(db);
         exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
         exec(R"SQL(
           CREATE TABLE IF NOT EXISTS rooms(live_id TEXT PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,version INTEGER NOT NULL DEFAULT 1,status TEXT NOT NULL DEFAULT 'connecting',detail TEXT NOT NULL DEFAULT '',chat INTEGER DEFAULT 0,gift INTEGER DEFAULT 0,enter_count INTEGER DEFAULT 0,likes INTEGER DEFAULT 0,online INTEGER DEFAULT 0,total INTEGER DEFAULT 0,updated_at INTEGER DEFAULT 0);
@@ -121,6 +147,7 @@ public:
           CREATE INDEX IF NOT EXISTS live_sessions_room_time ON live_sessions(live_id,started_at_ms DESC,id DESC);
           CREATE UNIQUE INDEX IF NOT EXISTS live_sessions_open ON live_sessions(live_id) WHERE ended_at_ms IS NULL;
           CREATE TABLE IF NOT EXISTS quarantine_resolutions(id TEXT PRIMARY KEY,resolved_at INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS compression_state(scope TEXT PRIMARY KEY,last_rowid INTEGER NOT NULL DEFAULT 0,done INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL DEFAULT 0);
         )SQL");
         // Keep the append-only delivery journal; snapshots read one current row
         // per streak. Migrate existing records once without replaying business effects.
@@ -130,7 +157,7 @@ public:
             if(!migrated.row()) {
                 exec(R"SQL(
                   INSERT INTO message_views(live_id,display_id,last_seq,body)
-                    SELECT live_id,event_id,id,body FROM events;
+                    SELECT live_id,event_id,id,decode_body(body) FROM events;
                   INSERT INTO gift_totals(live_id,quantity)
                     SELECT live_id,SUM(COALESCE(json_extract(body,'$.gift_count'),1))
                     FROM message_views WHERE json_extract(body,'$.type')='gift' GROUP BY live_id;
@@ -141,6 +168,7 @@ public:
         } catch(...) { exec("ROLLBACK"); throw; }
         analytics_initialize();
         sessions_initialize();
+        compression_initialize();
     }
     ~Store() { sqlite3_close(db); }
     json rooms() {
@@ -236,22 +264,30 @@ public:
         o={{"frames",q.number(0)},{"events",q.number(1)},{"quarantine",q.number(2)},{"rabbitmq",mq_ready.load()},{"database",true},{"pipeline","RabbitMQ → C++ Protobuf → SQLite → C++ WebSocket"}};
         Statement c(db,"SELECT body,seen_at FROM collector_state WHERE id=1");
         if(c.row()) { o["collector"]=json::parse(c.str(0)); o["collector"]["online"]=now_ms()-c.number(1)<15000; } else o["collector"]={{"online",false}};
+        Statement pages(db,"PRAGMA page_count"),size(db,"PRAGMA page_size");
+        pages.row();size.row();
+        o["database_bytes"]=pages.number(0)*size.number(0);
+        std::error_code ec;const auto wal=std::filesystem::file_size(std::filesystem::path(database_path+"-wal"),ec);
+        o["wal_bytes"]=ec?0:int64_t(wal);
+        o["maintenance"]=maintenance_status();
         return o;
     }
     json message_detail(const std::string& event_id) {
         std::lock_guard<std::mutex> guard(mutex);
         Statement q(db,"SELECT e.body,d.body FROM events e LEFT JOIN event_details d ON d.event_id=e.event_id WHERE e.event_id=?");q.text(1,event_id);
         if(!q.row())return nullptr;
-        return {{"event",json::parse(q.str(0))},{"details",q.str(1).empty()?json(nullptr):json::parse(q.str(1))}};
+        const auto event=q.decoded(0),details=q.decoded(1);
+        return {{"event",json::parse(event)},{"details",details.empty()?json(nullptr):json::parse(details)}};
     }
     json message_methods(const std::string& room) {
         std::lock_guard<std::mutex> guard(mutex);
-        Statement q(db,R"SQL(SELECT COALESCE(json_extract(v.body,'$.method'),json_extract(v.body,'$.type')),COALESCE(json_extract(v.body,'$.parse_status'),'legacy'),COUNT(*)
+        Statement q(db,R"SQL(SELECT COALESCE(json_extract(decode_body(v.body),'$.method'),json_extract(decode_body(v.body),'$.type')),COALESCE(json_extract(decode_body(v.body),'$.parse_status'),'legacy'),COUNT(*)
             FROM events v JOIN rooms r ON r.live_id=v.live_id WHERE r.source='douyin' AND feed_visible(v.body) AND (?='' OR v.live_id=?) GROUP BY 1,2 ORDER BY 3 DESC)SQL");
         q.text(1,room).text(2,room);json list=json::array();
         while(q.row())list.push_back({{"method",q.str(0)},{"parse_status",q.str(1)},{"count",q.number(2)}});
         return list;
     }
+    #include "compression_store.inc"
     void commit(const pipeline::RawFrameEnvelope& frame, const std::string& raw, const json& parsed, const json& errors, bool replay=false) {
         std::lock_guard<std::mutex> guard(mutex); auto hash=digest(raw);
         Statement receipt(db,"SELECT hash FROM receipts WHERE frame_id=?"); receipt.text(1,frame.frame_id());
@@ -291,7 +327,7 @@ public:
                 Statement seen(db,"SELECT id,body,live_id FROM events WHERE event_id=?");seen.text(1,event_id);
                 bool existing=seen.row(),recovering=false;
                 if(existing && replay) {
-                    const auto old=json::parse(seen.str(1));
+                    const auto old=json::parse(seen.decoded(1));
                     recovering=old.value("type","")=="parse_error" && type!="parse_error" && e.value("parse_status","")!="failed";
                     if(recovering) {
                         if(seen.str(2)!=frame.live_id())throw std::runtime_error("replay room identity conflict");
@@ -307,14 +343,14 @@ public:
                     }
                 }
                 if(e.contains("_details")) {
-                    Statement detail(db,recovering?"INSERT INTO event_details VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET body=excluded.body":"INSERT OR IGNORE INTO event_details VALUES(?,?)");detail.text(1,event_id).text(2,e["_details"].dump()).row();e.erase("_details");
+                    Statement detail(db,recovering?"INSERT INTO event_details VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET body=excluded.body":"INSERT OR IGNORE INTO event_details VALUES(?,?)");detail.text(1,event_id);bind_body(detail,2,e["_details"].dump());detail.row();e.erase("_details");
                 }
                 if(existing) {
                     if(replay && e.value("has_details",false)) {
                         // Hydrate metadata without replaying counters or overwriting
                         // historical gift merges/user profile repairs.
                         const auto patch=json{{"method",e["method"]},{"parse_status",e["parse_status"]},{"payload_bytes",e["payload_bytes"]},{"has_details",true},{"parser_version",e.value("parser_version",2)}}.dump();
-                        Statement old(db,"UPDATE events SET body=json_patch(body,?) WHERE event_id=?");old.text(1,patch).text(2,event_id).row();
+                        Statement old(db,"UPDATE events SET body=encode_body(json_patch(decode_body(body),?)) WHERE event_id=?");old.text(1,patch).text(2,event_id).row();
                         Statement view(db,"UPDATE message_views SET body=json_patch(body,?) WHERE live_id=? AND json_extract(body,'$.event_id')=?");view.text(1,patch).text(2,frame.live_id()).text(3,event_id).row();
                     }
                     continue;
@@ -382,7 +418,7 @@ public:
                     presentation["gift_count"]=count; presentation["gift_final"]=finalized||presentation.value("gift_final",false);
                     gift_delta=count-previous;
                 }
-                Statement ins(db,"INSERT OR IGNORE INTO events(event_id,live_id,body) VALUES(?,?,?)"); ins.text(1,e["event_id"]).text(2,frame.live_id()).text(3,e.dump()).row();
+                Statement ins(db,"INSERT OR IGNORE INTO events(event_id,live_id,body) VALUES(?,?,?)"); ins.text(1,e["event_id"]).text(2,frame.live_id()); bind_body(ins,3,e.dump()); ins.row();
                 if(sqlite3_changes(db)==0) continue;
                 const auto seq=sqlite3_last_insert_rowid(db);
                 analytics_project(seq,frame.live_id(),e);
@@ -424,6 +460,38 @@ public:
 #include "detail_redecode.inc"
 #include "gift_fact_repair.inc"
 #include "gift_group_repair.inc"
+
+// Background maintenance: re-encode legacy plain bodies in small batches, then
+// run queued VACUUMs. Each batch is one short mutex hold so collection and
+// queries are paced, not starved.
+static void maintenance_loop(Store& store) {
+    auto setting=[](const char* key,int fallback,int minimum,int maximum) {
+        try {
+            const auto raw=env(key,std::to_string(fallback).c_str());size_t end=0;
+            const auto value=std::stoi(raw,&end);
+            if(end==raw.size() && value>=minimum && value<=maximum)return value;
+        } catch(const std::exception&) {}
+        std::cerr<<"[maintenance] Invalid "<<key<<"; using "<<fallback<<std::endl;
+        return fallback;
+    };
+    const auto rows=setting("COMPRESSION_BATCH_ROWS",200,1,10000);
+    const auto pause=setting("COMPRESSION_BATCH_PAUSE_MS",50,0,60000);
+    while(running) {
+        try {
+            if(compression_enabled() && store.compress_batch(rows)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+                continue;
+            }
+            if(vacuum_requested.load()) {
+                std::cerr<<"[maintenance] Compacting database; collection and queries pause until it finishes"<<std::endl;
+                store.vacuum();
+                std::cerr<<"[maintenance] Database compaction finished"<<std::endl;
+                continue;
+            }
+        } catch(const std::exception& e) { std::cerr<<"[maintenance] "<<e.what()<<'\n'; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+}
 
 static void ingest_body(Store& store,const std::string& body,bool dead=false) {
 pipeline::RawFrameEnvelope frame; json events=json::array(), errors=json::array();
@@ -586,8 +654,15 @@ int main(int argc, char** argv) {
         http.set_payload_max_length(9*1024*1024); http.set_read_timeout(5); http.set_write_timeout(5);
         http.set_exception_handler([](const httplib::Request&,httplib::Response& res,std::exception_ptr){res.status=500;res.set_content("{\"error\":\"Request failed\"}","application/json");});
         auto send=[](httplib::Response& res,const json& data){res.set_content(data.dump(),"application/json");};
+        http.set_pre_routing_handler([&](const httplib::Request& req,httplib::Response& res){
+            if((!startup_ready.load() || vacuum_running.load()) && req.path!="/health/live" && req.path!="/api/maintenance/status") {
+                res.status=503;res.set_header("Retry-After","2");send(res,{{"error","数据库正在维护，请稍后重试"}});
+                return httplib::Server::HandlerResponse::Handled;
+            }
+            return httplib::Server::HandlerResponse::Unhandled;
+        });
         auto internal=[&](const httplib::Request& req,httplib::Response& res){if(req.get_header_value("X-Internal-Token")!=env("INTERNAL_TOKEN","local-collector-token")){res.status=401;return false;}return true;};
-        http.Get("/health/live",[&](const httplib::Request&,httplib::Response& res){send(res,{{"status","ok"}});});
+        http.Get("/health/live",[&](const httplib::Request&,httplib::Response& res){send(res,{{"status",startup_ready.load()?"ok":vacuum_running.load()?"maintenance":"starting"}});});
         http.Get("/api/health",[&](const httplib::Request&,httplib::Response& res){auto o=store.overview();o["redis"]=cache.healthy();o["debug_mode"]=options.debug;o["version"]=PIPELINE_VERSION;
 #ifdef PIPELINE_PORTABLE
             o["transport"]="local";o["cache_backend"]="sqlite";o["pipeline"]="Local spool → C++ Protobuf → SQLite → C++ WebSocket";
@@ -641,6 +716,13 @@ int main(int argc, char** argv) {
             try {auto after=std::stoll(req.has_param("after_seq")?req.get_param_value("after_seq"):"0");if(after<0)throw std::invalid_argument("Invalid cursor");send(res,store.frontend_batch(req.matches[1].str(),after));}catch(...){res.status=400;send(res,{{"error","Invalid cursor"}});}
         });
         http.Get("/internal/targets",[&](const httplib::Request& req,httplib::Response& res){if(internal(req,res))send(res,store.rooms());});
+        http.Get("/api/maintenance/status",[&](const httplib::Request&,httplib::Response& res){send(res,store.maintenance_status());});
+        http.Post("/api/maintenance/compact",[&](const httplib::Request&,httplib::Response& res){
+            const auto result=store.request_compact();
+            if(result==2){res.status=400;send(res,{{"error","磁盘剩余空间不足，无法整理数据库"}});return;}
+            if(result==1){res.status=409;send(res,{{"error","数据库正在整理或已有整理任务待执行"}});return;}
+            res.status=202;send(res,{{"queued",true},{"warning","整理期间采集与查询将暂停"}});
+        });
         http.Post("/internal/receipts",[&](const httplib::Request& req,httplib::Response& res){if(!internal(req,res))return;auto ids=json::parse(req.body);if(!ids.is_array()||ids.size()>256){res.status=400;return;}send(res,store.receipts(ids));});
         http.Post("/internal/heartbeat",[&](const httplib::Request& req,httplib::Response& res){if(!internal(req,res))return;store.heartbeat(json::parse(req.body));send(res,{{"ok",true}});});
 #ifdef PIPELINE_PORTABLE
@@ -655,11 +737,15 @@ int main(int argc, char** argv) {
         signals.async_wait([&](beast::error_code,int){running=false;http.stop();io.stop();});
         if(!http.bind_to_port(env("BIND_HOST","0.0.0.0"),std::stoi(env("HTTP_PORT","8080"))))throw std::runtime_error("HTTP port unavailable");
         std::thread api([&]{http.listen_after_bind();});
+        try { store.startup_vacuum_if_pending(); }
+        catch(const std::exception& error) { std::cerr<<"[maintenance] Startup compaction postponed: "<<error.what()<<std::endl; }
+        startup_ready=true;
+        std::thread maintenance([&]{maintenance_loop(store);});
 #ifndef PIPELINE_PORTABLE
         std::thread worker([&]{consume(store,false);}); std::thread dead([&]{consume(store,true);});
 #endif
         std::cout << "C++ pipeline ready: HTTP 8080, WebSocket 8081; debug=" << (options.debug?"on":"off") << std::endl;
-        io.run(); running=false;http.stop();api.join();
+        io.run(); running=false;http.stop();api.join();maintenance.join();
 #ifndef PIPELINE_PORTABLE
         worker.join();dead.join();
 #endif

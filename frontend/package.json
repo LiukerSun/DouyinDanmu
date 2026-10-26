@@ -14,6 +14,8 @@
     "test:sessions": "node scripts/check-sessions.cjs",
     "test:workspace-navigation": "node scripts/check-workspace-navigation.cjs",
     "test:room-removal": "node scripts/check-room-removal.cjs",
+    "test:compression-maintenance": "node scripts/check-compression-maintenance.cjs",
+    "test:updates": "node scripts/check-updates.cjs",
     "test:gift-history": "node scripts/check-gift-history.cjs",
     "dev": "vite",
     "build": "tsc && vite build",

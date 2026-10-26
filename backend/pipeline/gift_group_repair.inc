@@ -14,6 +14,7 @@ static json repair_gift_groups(bool apply) {
     }
     std::unique_ptr<sqlite3,decltype(&sqlite3_close)> database(raw,sqlite3_close);
     sqlite3_busy_timeout(raw,5000);
+    register_body_codecs(raw);
     auto exec=[&](const char* sql){if(sqlite3_exec(raw,sql,nullptr,nullptr,nullptr)!=SQLITE_OK)throw std::runtime_error(sqlite3_errmsg(raw));};
     auto table=[&](const char* name){Statement q(raw,"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");q.text(1,name);return q.row();};
     auto version=[&](){Statement q(raw,"PRAGMA data_version");q.row();return q.number(0);};
@@ -41,7 +42,7 @@ static json repair_gift_groups(bool apply) {
             if(version()!=before)throw std::runtime_error("Database changed during backup; stop collection before repairing gift groups");
         } else {exec("BEGIN");transaction=true;}
         const bool presentations=table("event_presentations");
-        struct Row {int64_t seq;std::string live,id,original;json body,detail,overlay,decoded;std::string recipient,error;};
+        struct Row {int64_t seq;std::string live,id,original;int original_type;json body,detail,overlay,decoded;std::string recipient,error;};
         std::map<std::string,std::vector<Row>> groups;
         std::set<std::string> conflicting_groups;
         auto identity=[](const std::string& live,const json& body) {
@@ -51,14 +52,17 @@ static json repair_gift_groups(bool apply) {
             const auto sql="SELECT e.id,e.live_id,e.event_id,e.body,d.body,"+std::string(presentations?"p.fields":"NULL")+
                 " FROM events e LEFT JOIN event_details d ON d.event_id=e.event_id "+
                 (presentations?"LEFT JOIN event_presentations p ON p.event_id=e.event_id ":"")+
-                "WHERE json_extract(e.body,'$.type')='gift' ORDER BY e.id";
+                "WHERE json_extract(decode_body(e.body),'$.type')='gift' ORDER BY e.id";
             Statement q(raw,sql.c_str());
             while(q.row()) {
-                Row row{q.number(0),q.str(1),q.str(2),q.str(3),json::parse(q.str(3)),nullptr,json::object(),nullptr,"",""};
+                // Keep the events body's exact stored bytes/type for the
+                // optimistic-concurrency clause when applying changes.
+                Row row{q.number(0),q.str(1),q.str(2),q.binary(3),q.stored_type(3),json::parse(q.decoded(3)),nullptr,json::object(),nullptr,"",""};
                 const auto key=identity(row.live,row.body);
                 try {
-                    row.detail=q.str(4).empty()?json(nullptr):json::parse(q.str(4));
-                    row.overlay=q.str(5).empty()?json::object():json::parse(q.str(5));
+                    const auto detail_raw=q.decoded(4),overlay_raw=q.decoded(5);
+                    row.detail=detail_raw.empty()?json(nullptr):json::parse(detail_raw);
+                    row.overlay=overlay_raw.empty()?json::object():json::parse(overlay_raw);
                     const auto& old=row.body;const auto& detail=row.detail;
                     if(old.value("room_id","").empty() || old.value("user_id","").empty() || old.value("gift_id","0")=="0" ||
                        old.value("gift_id","").empty() || old.value("group_id","0")=="0" || old.value("group_id","").empty())
@@ -134,7 +138,7 @@ static json repair_gift_groups(bool apply) {
                     for(const auto& [id,old_members]:old_groups) {
                         plan.old_ids.insert(id);int64_t maximum=0;
                         for(const auto* row:old_members)maximum=std::max(maximum,row->body.at("gift_count").get<int64_t>());
-                        Statement ownership(raw,"SELECT COUNT(*) FROM events WHERE live_id=? AND COALESCE(json_extract(body,'$.display_id'),event_id)=?");
+                        Statement ownership(raw,"SELECT COUNT(*) FROM events WHERE live_id=? AND COALESCE(json_extract(decode_body(body),'$.display_id'),event_id)=?");
                         ownership.text(1,plan.live).text(2,id);ownership.row();
                         if(ownership.number(0)!=int64_t(old_members.size()))throw std::runtime_error("shared_display_identity");
                         Statement view(raw,"SELECT last_seq,body FROM message_views WHERE live_id=? AND display_id=?");view.text(1,plan.live).text(2,id);
@@ -148,7 +152,7 @@ static json repair_gift_groups(bool apply) {
                         plan.old_quantity=sum(plan.old_quantity,maximum);
                     }
                     if(!plan.old_ids.count(plan.display)) {
-                        for(const char* sql:{"SELECT 1 FROM events WHERE live_id=? AND COALESCE(json_extract(body,'$.display_id'),event_id)=? LIMIT 1",
+                        for(const char* sql:{"SELECT 1 FROM events WHERE live_id=? AND COALESCE(json_extract(decode_body(body),'$.display_id'),event_id)=? LIMIT 1",
                             "SELECT 1 FROM message_views WHERE live_id=? AND display_id=?","SELECT 1 FROM analytics_gift_groups WHERE live_id=? AND display_id=?"}) {
                             Statement conflict(raw,sql);conflict.text(1,plan.live).text(2,plan.display);if(conflict.row())throw std::runtime_error("target_display_conflict");
                         }
@@ -211,12 +215,12 @@ static json repair_gift_groups(bool apply) {
                 for(const auto& change:plan.changes) {
                     if(change.event_changed) {
                         Statement event(raw,"UPDATE events SET body=? WHERE id=? AND event_id=? AND body=?");
-                        event.text(1,change.body.dump()).num(2,change.row->seq).text(3,change.row->id).text(4,change.row->original).row();
+                        bind_body(event,1,change.body.dump());event.num(2,change.row->seq).text(3,change.row->id);bind_stored(event,4,change.row->original,change.row->original_type);event.row();
                         if(sqlite3_changes(raw)!=1)throw std::runtime_error("Gift event changed during group repair");
                     }
                     if(change.overlay!=change.row->overlay) {
                         if(change.overlay.empty()){Statement erase(raw,"DELETE FROM event_presentations WHERE event_id=?");erase.text(1,change.row->id).row();}
-                        else {Statement overlay(raw,"INSERT INTO event_presentations VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET fields=excluded.fields");overlay.text(1,change.row->id).text(2,change.overlay.dump()).row();}
+                        else {Statement overlay(raw,"INSERT INTO event_presentations VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET fields=excluded.fields");overlay.text(1,change.row->id);bind_body(overlay,2,change.overlay.dump());overlay.row();}
                     }
                     if(change.analytics_changed) {
                         Statement fact(raw,"UPDATE analytics_events SET gift_quantity=?,recipient_id=? WHERE seq=? AND event_id=? AND live_id=?");

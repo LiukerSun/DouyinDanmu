@@ -2,6 +2,8 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 COPY auth/server.js ./server.js
 COPY auth/portable-web.js ./portable-web.js
+COPY auth/update-service.js ./update-service.js
+COPY VERSION ./VERSION
 RUN mkdir /data && chown node:node /data
 USER node
 EXPOSE 8091

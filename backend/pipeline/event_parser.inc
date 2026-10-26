@@ -2,12 +2,8 @@
 #include <limits>
 
 static std::string inflate_frame(const std::string& input) {
-    if(input.size()<2 || (unsigned char)input[0]!=0x1f || (unsigned char)input[1]!=0x8b) return input;
-    z_stream stream{}; stream.next_in=(Bytef*)input.data(); stream.avail_in=input.size();
-    if(inflateInit2(&stream,16+MAX_WBITS)!=Z_OK) throw std::runtime_error("gzip init failed");
-    std::string result; char chunk[16384]; int rc=Z_OK;
-    while(rc==Z_OK) { stream.next_out=(Bytef*)chunk; stream.avail_out=sizeof(chunk); rc=inflate(&stream,Z_NO_FLUSH); result.append(chunk,sizeof(chunk)-stream.avail_out); if(result.size()>16*1024*1024) { inflateEnd(&stream); throw std::runtime_error("decompressed frame exceeds 16 MB"); } }
-    inflateEnd(&stream); if(rc!=Z_STREAM_END) throw std::runtime_error("invalid gzip frame"); return result;
+    if(!is_compressed_body(input.data(),input.size())) return input;
+    return gzip_decode(input.data(),input.size(),16*1024*1024);
 }
 template<class T> static T decode(const std::string& b) { T m; if(!m.ParseFromString(b)) throw std::runtime_error("invalid protobuf payload"); return m; }
 static std::string precise_user_id(const User& user) {

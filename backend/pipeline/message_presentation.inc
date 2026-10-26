@@ -17,8 +17,11 @@ static bool feed_visible(const json& event) {
 
 static void sqlite_feed_visible(sqlite3_context* context,int,sqlite3_value** values) noexcept {
     try {
-        const auto* body=sqlite3_value_text(values[0]);
-        sqlite3_result_int(context,body && feed_visible(json::parse(reinterpret_cast<const char*>(body))));
+        // Blob-safe: compressed bodies carry embedded NULs. decode_body passes
+        // legacy plain TEXT through unchanged.
+        const auto* body=static_cast<const char*>(sqlite3_value_blob(values[0]));
+        const auto n=size_t(sqlite3_value_bytes(values[0]));
+        sqlite3_result_int(context,body && feed_visible(json::parse(decode_body(std::string(body,n)))));
     } catch(...) { sqlite3_result_int(context,0); }
 }
 

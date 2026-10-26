@@ -176,3 +176,62 @@ test('independent public ports retain their sessions in one host cookie jar', as
   assert.equal((await a.request('/verify', undefined, cookies())).status, 401);
   assert.equal((await b.request('/verify', undefined, cookies())).status, 200);
 });
+
+test('update endpoints require a session and same-origin writes before the portable proxy', async t => {
+  let checks = 0, installs = 0;
+  const service = { getStatus: () => ({ current_version: '2.5.0', checking: false }),
+    check: async () => { checks++; return service.getStatus(); },
+    install: () => { if (++installs > 1) throw Object.assign(new Error('更新已在进行中'), { statusCode: 409 }); return { install: { phase: 'downloading' } }; } };
+  // webRoot ensures these routes also work before portableRequest dispatches /api/.
+  const fixture = await authFixture(t, { updateService: service, webRoot: os.tmpdir() });
+  assert.equal((await fixture.request('/api/updates/status')).status, 401);
+  assert.equal((await fixture.request('/api/updates/install', {})).status, 401);
+  assert.equal(checks + installs, 0);
+  const account = await fixture.request('/api/auth/setup', { username: 'update-admin', password: 'update-test-password' });
+  const cookie = account.cookie.split(';')[0];
+  assert.equal((await fixture.request('/api/updates/status', undefined, cookie)).status, 200);
+  assert.equal((await fixture.request('/api/updates/check', {}, cookie)).status, 200);
+  assert.equal((await fixture.request('/api/updates/install', {}, cookie, { Origin: 'https://evil.invalid' })).status, 403);
+  assert.equal((await fixture.request('/api/updates/install', {}, cookie, { Origin: '' })).status, 403);
+  assert.equal((await fixture.request('/api/updates/install', {}, cookie, { Host: 'evil.invalid' })).status, 403);
+  assert.equal((await fixture.request('/api/updates/install', {}, cookie, { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
+  assert.equal((await fixture.request('/api/updates/install', { url: 'https://evil.invalid/update.zip' }, cookie)).status, 400);
+  assert.equal((await fixture.request('/api/updates/install', {}, cookie, { 'Content-Type': 'text/plain' })).status, 415);
+  assert.equal(installs, 0);
+  assert.equal((await fixture.request('/api/updates/install', {}, cookie)).status, 202);
+  assert.equal((await fixture.request('/api/updates/install', {}, cookie)).status, 409);
+  assert.equal(checks, 2);
+});
+
+test('streamed update requests cannot use a session revoked or expired while reading the body', async t => {
+  let clock = Date.now(), operations = 0;
+  const fixture = await authFixture(t, { now: () => clock, sessionMs: 60000,
+    updateService: { getStatus: () => ({}), check: async () => { operations++; return {}; }, install: () => { operations++; return {}; } } });
+  const account = { username: 'stream-updates', password: 'streamed-update-test-password' };
+  const setup = await fixture.request('/api/auth/setup', account);
+  assert.equal(setup.status, 200);
+  let cookie = setup.cookie.split(';')[0];
+  const startStreamed = async url => {
+    let req;
+    const started = new Promise(resolve => fixture.server.once('request', request => request.once('data', resolve)));
+    const response = new Promise((resolve, reject) => {
+      req = http.request(fixture.requestOptions(url, {}, cookie), res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject); req.write('{');
+    });
+    await started;
+    return { response, finish: () => req.end('}') };
+  };
+  for (const reason of ['logout', 'expiry']) {
+    const pending = [await startStreamed('/api/updates/check'), await startStreamed('/api/updates/install')];
+    if (reason === 'logout') assert.equal((await fixture.request('/api/auth/logout', {}, cookie)).status, 200);
+    else clock += 60001;
+    for (const request of pending) request.finish();
+    assert.deepEqual(await Promise.all(pending.map(request => request.response)), [401, 401]);
+    assert.equal(operations, 0);
+    if (reason === 'logout') {
+      const login = await fixture.request('/api/auth/login', account);
+      assert.equal(login.status, 200);
+      cookie = login.cookie.split(';')[0];
+    }
+  }
+});

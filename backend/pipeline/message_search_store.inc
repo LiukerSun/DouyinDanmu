@@ -2,7 +2,9 @@
         query.validate();
         if(query.as_of_seq>=0 && !query.deliveries)throw std::invalid_argument("统计快照明细请使用 view=events");
         std::lock_guard<std::mutex> guard(mutex);
-        const std::string source=query.deliveries?"(SELECT live_id,id AS last_seq,body FROM events)":"message_views";
+        // The deliveries view decodes at the source so every downstream
+        // json_extract/feed_visible on v.body works unchanged.
+        const std::string source=query.deliveries?"(SELECT live_id,id AS last_seq,decode_body(body) AS body FROM events)":"message_views";
         std::string where=" FROM "+source+" v JOIN rooms r ON r.live_id=v.live_id";
         if(query.deliveries)where+=" LEFT JOIN analytics_events a ON a.seq=v.last_seq";
         where+=" WHERE r.source='douyin' AND feed_visible(v.body)";

@@ -5,8 +5,12 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { createAuthServer } = require('../auth/server');
+const { createUpdateService } = require('../auth/update-service');
+const { createPortableInstaller } = require('./update-package');
 
-const root = path.resolve(__dirname, '../..');
+const appRoot = path.resolve(__dirname, '../..');
+const root = process.env.DOUYIN_UPDATE_PROTOCOL === '1' && process.env.DOUYIN_INSTALL_ROOT
+  ? path.resolve(process.env.DOUYIN_INSTALL_ROOT) : appRoot;
 const data = path.join(root, 'data'), runtime = path.join(data, '.runtime');
 const stateFile = path.join(runtime, 'instance.json');
 const args = process.argv.slice(2);
@@ -50,7 +54,7 @@ async function start() {
     await Promise.race([Promise.all(children.map(child => child.exitCode !== null ? Promise.resolve() : new Promise(resolve => child.once('exit', resolve)))), sleep(5000)]);
     for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
     try { if (JSON.parse(fs.readFileSync(stateFile, 'utf8')).controlToken === controlToken) fs.unlinkSync(stateFile); } catch {}
-    console.log(code ? '启动/运行失败，详情见 logs 目录。' : '服务已停止，数据已保留。');
+    console.log(code === 75 ? '更新已准备完成，正在重启，账号和采集数据保留。' : code ? '启动/运行失败，详情见 logs 目录。' : '服务已停止，数据已保留。');
     // All owned children are terminated before the supervisor exits.
     process.exit(code);
   };
@@ -58,9 +62,18 @@ async function start() {
   process.on('uncaughtException', error => { console.error(error.message); void shutdown(1); });
   process.on('unhandledRejection', error => { console.error(String(error)); void shutdown(1); });
   try {
+    // A window close after staging must not strand a verified pending update.
+    // The instance lock above ensures a second launch cannot switch a live app.
+    if (process.env.DOUYIN_UPDATE_PROTOCOL === '1' && fs.existsSync(path.join(root, '.updates', 'pending-version'))) {
+      await shutdown(75);return;
+    }
     const backendPort = await freePort(), wsPort = await freePort(), settingsPort = await freePort();
     const origins = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
-    web = await createAuthServer({ dataDir: path.join(data, 'auth'), origins, wsHost: '127.0.0.1', wsPort, backendPort, settingsPort, webRoot: path.join(root, 'web') });
+    const currentVersion = fs.readFileSync(path.join(appRoot, 'VERSION'), 'utf8').trim();
+    const installRelease = process.platform === 'win32' && process.env.DOUYIN_UPDATE_PROTOCOL === '1'
+      ? createPortableInstaller({ installRoot: root, appRoot, currentVersion, onReady: () => { setTimeout(() => void shutdown(75), 500); } }) : null;
+    const updateService = createUpdateService({ currentVersion, installRelease });
+    web = await createAuthServer({ dataDir: path.join(data, 'auth'), origins, wsHost: '127.0.0.1', wsPort, backendPort, settingsPort, webRoot: path.join(appRoot, 'web'), updateService });
     await new Promise((resolve, reject) => { web.once('error', reject); web.listen(port, '127.0.0.1', resolve); });
     control = http.createServer((req, res) => {
       if (req.headers['x-control-token'] !== controlToken) { res.writeHead(403); res.end(); return; }
@@ -83,14 +96,31 @@ async function start() {
       child.on('exit', code => { if (!ending) { failed = true; console.error(name + ' 已退出：' + code); void shutdown(1); } });
       return child;
     };
-    launch('backend', path.join(root, 'bin', 'douyin-pipeline.exe'), debug ? ['--debug'] : []);
-    let healthy = false;
-    for (let i = 0; i < 100 && !failed; i++) {
-      try { healthy = (await fetch(env.BACKEND_URL + '/health/live', { signal: AbortSignal.timeout(500) })).ok; } catch {}
-      if (healthy) break; await sleep(150);
+    launch('backend', path.join(appRoot, 'bin', 'douyin-pipeline.exe'), debug ? ['--debug'] : []);
+    let healthy = false, maintenanceNotice = false, deadline = Date.now() + 15000;
+    while (!failed && Date.now() < deadline) {
+      let pause = 150;
+      try {
+        const response = await fetch(env.BACKEND_URL + '/health/live', { signal: AbortSignal.timeout(500) });
+        if (response.ok) {
+          const health = await response.json();
+          healthy = health.status === 'ok';
+          if (health.status === 'maintenance') {
+            // A responsive VACUUM may take minutes. Keep waiting only while
+            // the backend confirms it is alive and doing startup maintenance.
+            deadline = Date.now() + 15000;
+            pause = 1000;
+            if (!maintenanceNotice) {
+              console.log('正在整理数据库，完成后将自动启动采集，请保持程序运行。');
+              maintenanceNotice = true;
+            }
+          }
+        }
+      } catch {}
+      if (healthy) break; await sleep(pause);
     }
     if (!healthy) throw new Error('后端未能启动，请查看 logs/backend.log');
-    launch('collector', process.execPath, [path.join(root, 'app', 'collector', 'index.js')]);
+    launch('collector', process.execPath, [path.join(appRoot, 'app', 'collector', 'index.js')]);
     console.log(`直播台已启动：http://localhost:${port}`);
     console.log(debug ? 'Debug 模式：协议诊断已开启。' : '普通模式：协议诊断已隐藏。');
     console.log('首次访问创建管理员账号。停止请按 Ctrl+C 或运行 stop.cmd。');

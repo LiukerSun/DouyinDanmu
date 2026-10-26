@@ -11,6 +11,7 @@ static json repair_gift_facts(bool apply) {
     }
     std::unique_ptr<sqlite3,decltype(&sqlite3_close)> database(raw,sqlite3_close);
     sqlite3_busy_timeout(raw,5000);
+    register_body_codecs(raw);
     auto exec=[&](const char* sql){if(sqlite3_exec(raw,sql,nullptr,nullptr,nullptr)!=SQLITE_OK)throw std::runtime_error(sqlite3_errmsg(raw));};
     auto has_table=[&](const char* name){Statement q(raw,"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");q.text(1,name);return q.row();};
     auto data_version=[&](){Statement q(raw,"PRAGMA data_version");q.row();return q.number(0);};
@@ -33,18 +34,21 @@ static json repair_gift_facts(bool apply) {
             if(data_version()!=version)throw std::runtime_error("Database changed during backup; stop collection before repairing gift facts");
         } else {exec("BEGIN");transaction=true;}
         const bool presentations=has_table("event_presentations");
-        struct Row {int64_t seq;std::string live,id,original;json body,detail,overlay;};
+        struct Row {int64_t seq;std::string live,id,original;int original_type;json body,detail,overlay;};
         std::map<std::pair<std::string,std::string>,std::vector<Row>> groups;
         {
             const std::string sql="SELECT e.id,e.live_id,e.event_id,e.body,d.body,"+std::string(presentations?"p.fields":"NULL")+
                 " FROM events e LEFT JOIN event_details d ON d.event_id=e.event_id "+
                 (presentations?"LEFT JOIN event_presentations p ON p.event_id=e.event_id ":"")+
-                "WHERE json_extract(e.body,'$.type')='gift' ORDER BY e.id";
+                "WHERE json_extract(decode_body(e.body),'$.type')='gift' ORDER BY e.id";
             Statement q(raw,sql.c_str());
             while(q.row()) {
-                auto body=json::parse(q.str(3));
-                groups[{q.str(1),body.value("display_id",q.str(2))}].push_back({q.number(0),q.str(1),q.str(2),q.str(3),std::move(body),
-                    q.str(4).empty()?json(nullptr):json::parse(q.str(4)),q.str(5).empty()?json::object():json::parse(q.str(5))});
+                auto body=json::parse(q.decoded(3));
+                const auto detail=q.decoded(4),overlay=q.decoded(5);
+                // Keep the events body's exact stored bytes/type for the
+                // optimistic-concurrency clause when applying changes.
+                groups[{q.str(1),body.value("display_id",q.str(2))}].push_back({q.number(0),q.str(1),q.str(2),q.binary(3),q.stored_type(3),std::move(body),
+                    detail.empty()?json(nullptr):json::parse(detail),overlay.empty()?json::object():json::parse(overlay)});
             }
         }
         struct Change {Row row;json repaired,overlay;int64_t quantity,price,timestamp;bool event_changed,analytics_changed;};
@@ -127,10 +131,10 @@ static json repair_gift_facts(bool apply) {
             if(!presentations)exec("CREATE TABLE event_presentations(event_id TEXT PRIMARY KEY,fields TEXT NOT NULL)");
             for(const auto& change:changes) {
                 if(change.event_changed) {
-                    Statement event(raw,"UPDATE events SET body=? WHERE id=? AND event_id=? AND body=?");event.text(1,change.repaired.dump()).num(2,change.row.seq).text(3,change.row.id).text(4,change.row.original).row();
+                    Statement event(raw,"UPDATE events SET body=? WHERE id=? AND event_id=? AND body=?");bind_body(event,1,change.repaired.dump());event.num(2,change.row.seq).text(3,change.row.id);bind_stored(event,4,change.row.original,change.row.original_type);event.row();
                     if(sqlite3_changes(raw)!=1)throw std::runtime_error("Gift event changed during repair");
                     if(change.overlay!=change.row.overlay) {
-                        Statement overlay(raw,"INSERT INTO event_presentations(event_id,fields) VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET fields=excluded.fields");overlay.text(1,change.row.id).text(2,change.overlay.dump()).row();
+                        Statement overlay(raw,"INSERT INTO event_presentations(event_id,fields) VALUES(?,?) ON CONFLICT(event_id) DO UPDATE SET fields=excluded.fields");overlay.text(1,change.row.id);bind_body(overlay,2,change.overlay.dump());overlay.row();
                     }
                 }
                 if(change.analytics_changed) {

@@ -224,7 +224,10 @@ void persistence_and_ordering() {
         Store reopened;
         check(room(reopened) == expected_room, "Room metadata and desired state must survive database reopen");
         check(reopened.snapshot(live_id) == expected_snapshot, "Existing message history must survive metadata writes and reopen");
-        check(reopened.overview() == expected_overview, "Metadata receipts must survive database reopen");
+        // File sizes fold the WAL in at checkpoint-on-close, so they are
+        // runtime observations, not persisted state.
+        auto persisted=[](json o){o.erase("database_bytes");o.erase("wal_bytes");return o;};
+        check(persisted(reopened.overview()) == persisted(expected_overview), "Metadata receipts must survive database reopen");
     }
 }
 

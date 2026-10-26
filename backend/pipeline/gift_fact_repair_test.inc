@@ -2,7 +2,7 @@
 class GiftRepairSql {
     sqlite3* db=nullptr;
 public:
-    explicit GiftRepairSql(const std::filesystem::path& path) {check(sqlite3_open(path.string().c_str(),&db)==SQLITE_OK,"Open isolated gift repair database");}
+    explicit GiftRepairSql(const std::filesystem::path& path) {check(sqlite3_open(path.string().c_str(),&db)==SQLITE_OK,"Open isolated gift repair database");register_body_codecs(db);}
     ~GiftRepairSql(){sqlite3_close(db);}
     void exec(const std::string& sql){check(sqlite3_exec(db,sql.c_str(),nullptr,nullptr,nullptr)==SQLITE_OK,sqlite3_errmsg(db));}
     json rows(const std::string& sql) {
@@ -20,7 +20,11 @@ public:
     }
     json saved() {
         json saved=json::object();
-        for(const char* table:{"events","event_details","event_presentations","analytics_events","analytics_gift_groups","message_views","gift_totals","rooms","receipts"})
+        // Body columns may be compressed BLOBs; compare their decoded JSON.
+        saved["events"]=rows("SELECT id,event_id,live_id,decode_body(body) FROM events ORDER BY 1");
+        saved["event_details"]=rows("SELECT event_id,decode_body(body) FROM event_details ORDER BY 1");
+        saved["event_presentations"]=rows("SELECT event_id,decode_body(fields) FROM event_presentations ORDER BY 1");
+        for(const char* table:{"analytics_events","analytics_gift_groups","message_views","gift_totals","rooms","receipts"})
             saved[table]=rows(std::string("SELECT * FROM ")+table+" ORDER BY 1");
         return saved;
     }
@@ -55,14 +59,14 @@ void gift_fact_repair_restores_proven_groups() {
     }
     GiftRepairSql sql(database.path());
     sql.exec("DELETE FROM event_presentations");
-    sql.exec("UPDATE events SET body=json_set(body,'$.fans_club',json('{\"name\":\"manual repair\",\"level\":19,\"member\":true}'),'$.user_name','repaired profile')");
+    sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.fans_club',json('{\"name\":\"manual repair\",\"level\":19,\"member\":true}'),'$.user_name','repaired profile'))");
     sql.exec("UPDATE analytics_events SET fans_club='{\"name\":\"manual repair\",\"level\":19,\"member\":true}',user_name='repaired profile'");
     sql.exec("UPDATE message_views SET body=json_set(body,'$.fans_club',json('{\"name\":\"manual repair\",\"level\":19,\"member\":true}'))");
-    sql.exec("UPDATE events SET body=json_set(body,'$.gift_unit_price',10) WHERE event_id='room-111:WebcastGiftMessage:102:0'");
+    sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.gift_unit_price',10)) WHERE event_id='room-111:WebcastGiftMessage:102:0'");
     sql.exec("UPDATE analytics_events SET gift_unit_price=10 WHERE event_id='room-111:WebcastGiftMessage:102:0'");
-    sql.exec("UPDATE events SET body=json_set(body,'$.gift_unit_price',0,'$.gift_count',5,'$.timestamp',1700000002000) WHERE event_id='room-111:WebcastGiftMessage:104:0'");
+    sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.gift_unit_price',0,'$.gift_count',5,'$.timestamp',1700000002000)) WHERE event_id='room-111:WebcastGiftMessage:104:0'");
     sql.exec("UPDATE analytics_events SET gift_unit_price=0,occurred_at_ms=1700000002000 WHERE event_id='room-111:WebcastGiftMessage:104:0'");
-    sql.exec("UPDATE events SET body=json_set(body,'$.timestamp',1700000002000) WHERE event_id='room-111:WebcastGiftMessage:105:0'");
+    sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.timestamp',1700000002000)) WHERE event_id='room-111:WebcastGiftMessage:105:0'");
     sql.exec("UPDATE analytics_events SET occurred_at_ms=1700000002000 WHERE event_id='room-111:WebcastGiftMessage:105:0'");
     sql.exec("INSERT INTO event_presentations VALUES('room-111:WebcastGiftMessage:105:0','{\"content\":\"retained display\",\"timestamp\":1700000100000}')");
     const auto before=sql.saved();const auto identities=sql.rows("SELECT id,event_id FROM events ORDER BY id");
@@ -80,9 +84,9 @@ void gift_fact_repair_restores_proven_groups() {
     check(sql.rows("SELECT id,event_id FROM events ORDER BY id")==identities,"Event identities and sequence values stay fixed");
     check(sql.rows("SELECT gift_unit_price,gift_quantity,occurred_at_ms FROM analytics_events WHERE event_id='room-111:WebcastGiftMessage:102:0'")[0]==json::array({nullptr,"1","1700000001000"}),"Sparse price is unknown in analytics");
     check(sql.rows("SELECT gift_unit_price FROM analytics_events WHERE event_id='room-111:WebcastGiftMessage:103:0'")[0][0]=="0","Explicit zero remains a known price");
-    check(sql.rows("SELECT json_extract(body,'$.gift_count'),json_extract(body,'$.timestamp') FROM events WHERE event_id='room-111:WebcastGiftMessage:104:0'")[0]==json::array({"3","1700000001000"}),"Late count and time are restored from this payload");
+    check(sql.rows("SELECT json_extract(decode_body(body),'$.gift_count'),json_extract(decode_body(body),'$.timestamp') FROM events WHERE event_id='room-111:WebcastGiftMessage:104:0'")[0]==json::array({"3","1700000001000"}),"Late count and time are restored from this payload");
     check(sql.rows("SELECT occurred_at_ms FROM analytics_events WHERE event_id='room-111:WebcastGiftMessage:106:0'")[0][0]=="1700000200106","Missing protocol time uses saved receipt time");
-    check(sql.rows("SELECT DISTINCT json_extract(body,'$.fans_club.level'),json_extract(body,'$.user_name') FROM events")[0]==json::array({"19","repaired profile"}),"Historical manual profile repair survives event changes");
+    check(sql.rows("SELECT DISTINCT json_extract(decode_body(body),'$.fans_club.level'),json_extract(decode_body(body),'$.user_name') FROM events")[0]==json::array({"19","repaired profile"}),"Historical manual profile repair survives event changes");
     check(sql.rows("SELECT DISTINCT json_extract(fans_club,'$.level'),user_name FROM analytics_events")[0]==json::array({"19","repaired profile"}),"Analytics profile columns are preserved");
     {
         Store store;check(store.frontend_batch("111",0)==before_stream && store.snapshot("111")==before_snapshot,"Existing and reconstructed display overlays preserve WS and snapshots");
@@ -102,11 +106,11 @@ void gift_fact_repair_skips_incomplete_groups_and_rolls_back() {
         repair_test_gift(store,205,53,1,-1,1700000000);repair_test_gift(store,206,54,1,-1,1700000000);
     }
     GiftRepairSql sql(database.path());
-    sql.exec("UPDATE events SET body=json_set(body,'$.gift_unit_price',99) WHERE event_id IN ('room-111:WebcastGiftMessage:202:0','room-111:WebcastGiftMessage:204:0','room-111:WebcastGiftMessage:205:0','room-111:WebcastGiftMessage:206:0')");
+    sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.gift_unit_price',99)) WHERE event_id IN ('room-111:WebcastGiftMessage:202:0','room-111:WebcastGiftMessage:204:0','room-111:WebcastGiftMessage:205:0','room-111:WebcastGiftMessage:206:0')");
     sql.exec("UPDATE analytics_events SET gift_unit_price=99 WHERE event_id IN ('room-111:WebcastGiftMessage:202:0','room-111:WebcastGiftMessage:204:0','room-111:WebcastGiftMessage:205:0','room-111:WebcastGiftMessage:206:0')");
     sql.exec("DELETE FROM event_details WHERE event_id='room-111:WebcastGiftMessage:203:0'");
-    sql.exec("UPDATE events SET body=json_set(body,'$.user_id','42') WHERE event_id='room-111:WebcastGiftMessage:205:0'");
-    sql.exec("UPDATE event_details SET body=json_set(body,'$.payload_base64','invalid') WHERE event_id='room-111:WebcastGiftMessage:206:0'");
+    sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.user_id','42')) WHERE event_id='room-111:WebcastGiftMessage:205:0'");
+    sql.exec("UPDATE event_details SET body=encode_body(json_set(decode_body(body),'$.payload_base64','invalid')) WHERE event_id='room-111:WebcastGiftMessage:206:0'");
     const auto dry=repair_gift_facts(false);
     check(dry["failed"]==0 && dry["skipped_groups"]==3 && dry["skipped_events"]==4 && dry["changed_groups"]==1,"Missing evidence, conflicting identity and corrupt payload skip their entire groups");
     sql.exec("CREATE TRIGGER reject_gift_repair BEFORE UPDATE OF gift_unit_price ON analytics_events BEGIN SELECT RAISE(ABORT,'injected analytics failure'); END");
@@ -116,5 +120,5 @@ void gift_fact_repair_skips_incomplete_groups_and_rolls_back() {
     sql.exec("DROP TRIGGER reject_gift_repair");
     const auto applied=repair_gift_facts(true);
     check(applied["failed"]==0 && applied["changed_events"]==1 && applied["skipped_groups"]==3,"Only the independently proven complete group is repaired");
-    check(sql.rows("SELECT json_extract(body,'$.gift_unit_price') FROM events WHERE event_id IN ('room-111:WebcastGiftMessage:204:0','room-111:WebcastGiftMessage:205:0','room-111:WebcastGiftMessage:206:0') ORDER BY id")==json::array({json::array({"99"}),json::array({"99"}),json::array({"99"})}),"All skipped groups remain untouched");
+    check(sql.rows("SELECT json_extract(decode_body(body),'$.gift_unit_price') FROM events WHERE event_id IN ('room-111:WebcastGiftMessage:204:0','room-111:WebcastGiftMessage:205:0','room-111:WebcastGiftMessage:206:0') ORDER BY id")==json::array({json::array({"99"}),json::array({"99"}),json::array({"99"})}),"All skipped groups remain untouched");
 }

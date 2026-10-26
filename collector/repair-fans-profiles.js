@@ -6,6 +6,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const { DatabaseSync } = require('node:sqlite');
 const protobuf = require('protobufjs');
+const { decodeBody, encodeBody } = require('./body-codec');
 
 const methods = { WebcastChatMessage: 'ChatMessage', WebcastMemberMessage: 'MemberMessage', WebcastGiftMessage: 'GiftMessage', WebcastLikeMessage: 'LikeMessage', WebcastSocialMessage: 'SocialMessage' };
 const own = (object, field) => object != null && Object.hasOwn(object, field);
@@ -73,12 +74,12 @@ async function repair({ database, capture, proto, apply = false }) {
       if (candidate.conflict) continue;
       const row = db.prepare('SELECT CAST(id AS TEXT) AS id,body FROM events WHERE event_id=? AND live_id=?').get(candidate.id, candidate.live);
       if (!row) continue;
-      const body = JSON.parse(row.body);
+      const body = JSON.parse(decodeBody(row.body));
       if (String(body.user_id) !== candidate.uid || conflictsWithFans(body.fans_club, candidate.fans)) continue;
       const repaired = missingFans(body, candidate.fans);
       if (repaired) {
         result.events++; viewers.add(body.user_name);
-        if (apply) db.prepare('UPDATE events SET body=? WHERE id=?').run(JSON.stringify(repaired), row.id);
+        if (apply) db.prepare('UPDATE events SET body=? WHERE id=?').run(encodeBody(JSON.stringify(repaired)), row.id);
       }
       // A gift view may represent a later message: only repair the exact sequence.
       for (const view of db.prepare('SELECT display_id,body FROM message_views WHERE live_id=? AND last_seq=?').all(candidate.live, row.id)) {

@@ -4,14 +4,16 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { promisify } = require('node:util');
 const { portableRequest } = require('./portable-web');
+const { createUpdateService, readCurrentVersion } = require('./update-service');
 const scrypt = promisify(crypto.scrypt);
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const SCRYPT = { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 };
 const publicUser = user => ({ username: user.username, displayName: user.displayName, role: '管理员' });
 const digest = token => crypto.createHash('sha256').update(token).digest('hex');
 
-async function createAuthServer({ dataDir, origins = ['http://localhost:3000', 'http://127.0.0.1:3000'], now = Date.now, sessionMs = SESSION_MS, wsHost = 'backend', wsPort = 8081, webRoot, backendPort, settingsPort } = {}) {
+async function createAuthServer({ dataDir, origins = ['http://localhost:3000', 'http://127.0.0.1:3000'], now = Date.now, sessionMs = SESSION_MS, wsHost = 'backend', wsPort = 8081, webRoot, backendPort, settingsPort, updateService } = {}) {
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  const updates = updateService || createUpdateService({ currentVersion: await readCurrentVersion(), now });
   const accountFile = path.join(dataDir, 'account.json');
   let user = null;
   try { user = JSON.parse(await fs.readFile(accountFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -58,6 +60,34 @@ async function createAuthServer({ dataDir, origins = ['http://localhost:3000', '
     try {
       if (req.url === '/health/live') return send(res, 200, { ok: true });
       if (!hosts.has(req.headers.host) || req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: '请从工作台地址访问' });
+      if (req.url.startsWith('/api/updates/')) {
+        if (!sessionFrom(req)) return send(res, 401, { error: '登录已过期，请重新登录' });
+        if (req.headers.origin && !allowed.has(req.headers.origin)) return send(res, 403, { error: '请求来源不受信任' });
+        if (req.method === 'GET' && req.url === '/api/updates/status') {
+          void updates.check().catch(() => {});
+          return send(res, 200, updates.getStatus());
+        }
+        if (req.method !== 'POST' || !['/api/updates/check', '/api/updates/install'].includes(req.url)) return send(res, 404, { error: '接口不存在' });
+        if (!allowed.has(req.headers.origin) || new URL(req.headers.origin).host !== req.headers.host) return send(res, 403, { error: '请从工作台提交请求' });
+        if ((req.headers['content-type'] || '').split(';')[0] !== 'application/json') return send(res, 415, { error: '请求格式不正确' });
+        const chunks = []; let size = 0;
+        for await (const chunk of req) { size += chunk.length; if (size > 1024) { send(res, 413, { error: '请求内容过长' }); req.resume(); return; } chunks.push(chunk); }
+        let body;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(res, 400, { error: '请求格式不正确' }); }
+        // The installed release and every download URL come from the fixed GitHub
+        // repository. Clients cannot select a local path, URL or older version.
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length) return send(res, 400, { error: '更新请求无需提供参数' });
+        // A streamed body can outlive its session or yield to a logout request.
+        // Revalidate immediately before starting any update operation.
+        if (!sessionFrom(req)) return send(res, 401, { error: '登录已过期，请重新登录' });
+        try {
+          if (req.url === '/api/updates/check') return send(res, 200, await updates.check({ force: true }));
+          return send(res, 202, updates.install());
+        } catch (failure) {
+          if (failure.statusCode === 409) return send(res, 409, { error: failure.message });
+          throw failure;
+        }
+      }
       if (webRoot && !req.url.startsWith('/api/auth/')) {
         if (req.headers.origin && !allowed.has(req.headers.origin)) return send(res, 403, { error: '请求来源不受信任' });
         return await portableRequest(req, res, { webRoot, backendPort, settingsPort, authenticated: !!sessionFrom(req), trustedWrite: allowed.has(req.headers.origin) && new URL(req.headers.origin).host === req.headers.host });

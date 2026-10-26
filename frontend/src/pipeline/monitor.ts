@@ -8,9 +8,23 @@ export type Room = {
     anchor: { nickname: string; avatar_url: string; display_id: string; signature: string; follower_count?: number | null }
   }
 }
-export type Health = { frames: number; events: number; quarantine: number; rabbitmq: boolean; redis: boolean; database: boolean; transport?: 'local'; cache_backend?: 'sqlite'; version?: string; collector: { online: boolean; spool_bytes?: number; spool_quarantine?: { files: number; bytes: number }; room_auth?: Record<string, { auth_status: CollectorAuthStatus }> } }
+export type MaintenanceStatus = {
+  compression_enabled: boolean
+  reencode: { scope: string; done: boolean }[]
+  vacuum_pending: boolean
+  vacuum_queued: boolean
+  vacuum_running: boolean
+}
+export type Health = { frames: number; events: number; quarantine: number; rabbitmq: boolean; redis: boolean; database: boolean; transport?: 'local'; cache_backend?: 'sqlite'; version?: string; database_bytes?: number; wal_bytes?: number; maintenance?: MaintenanceStatus; collector: { online: boolean; spool_bytes?: number; spool_quarantine?: { files: number; bytes: number }; room_auth?: Record<string, { auth_status: CollectorAuthStatus }> } }
 export const statusLabels: Record<string, string> = { connecting: '连接中', collecting: '采集中', reconnecting: '重连中', waiting_live: '等待开播', stopped: '已停止', failed: '连接失败', backpressured: '缓冲已满' }
 export const formatNumber = (value: number) => value.toLocaleString('zh-CN')
+export const formatBytes = (value: number) => {
+  if (value < 1024) return value + ' B'
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let size = value, unit = -1
+  do { size /= 1024; unit++ } while (size >= 1024 && unit < units.length - 1)
+  return size.toFixed(1) + ' ' + units[unit]
+}
 export const roomName = (room: Room) => room.metadata?.anchor.nickname || room.live_id
 export const isStale = (room: Room) => !room.metadata || room.metadata_stale || Date.now() - room.metadata.checked_at_ms > 180000
 export const isLive = (room: Room) => !isStale(room) && room.metadata?.live_status === 'live'

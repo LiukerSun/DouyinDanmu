@@ -1,6 +1,8 @@
 # Private runtime data and credentials (never commit)
 /secrets/
 /data/
+/.updates/
+/.versions/
 /auth-data/
 /config/
 **/spool/

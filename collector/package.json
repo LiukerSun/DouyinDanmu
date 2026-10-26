@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.2.0",
   "type": "commonjs",
+  "scripts": {
+    "test:maintenance": "node --test body-codec.test.js diagnose-gifts.test.js repair-fans-profiles.test.js"
+  },
   "dependencies": {
     "amqplib": "0.10.9",
     "protobufjs": "8.8.0",

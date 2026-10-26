@@ -22,17 +22,25 @@ if (!$nodeHash -or (Get-FileHash $node -Algorithm SHA256).Hash -ne $nodeHash) { 
 $previousPath = $env:PATH
 try {
   $env:PATH = "$nodeDirectory;$previousPath"
+  $appVersion = (& $node (Join-Path $PSScriptRoot 'version.cjs') check).Trim(); Check-Exit 'Validate application version'
   if (!$SkipBuild) {
     $cmakeArgs = @('-S', (Join-Path $project 'backend/pipeline'), '-B', $build, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_TESTING=ON', '-DCMAKE_POLICY_VERSION_MINIMUM=3.10')
     $cachedBoost = Join-Path $cache 'boost_1_85_0'
     if (Test-Path (Join-Path $cachedBoost 'boost/version.hpp')) { $cmakeArgs += "-DFETCHCONTENT_SOURCE_DIR_BOOST_HEADERS=$($cachedBoost.Replace('\','/'))" }
     & cmake @cmakeArgs; Check-Exit 'Configure native backend'
-    & cmake --build $build --target douyin-pipeline portable-host metadata-test gift-store-test parser-test -j $Jobs; Check-Exit 'Build native backend'
+    & cmake --build $build --target douyin-pipeline portable-host metadata-test gift-store-test parser-test session-store-test compression-test -j $Jobs; Check-Exit 'Build native backend'
     & ctest --test-dir $build --output-on-failure; Check-Exit 'Native tests'
+    & $node --test (Join-Path $PSScriptRoot 'launcher.test.cjs'); Check-Exit 'Portable launcher tests'
+    & $node --test (Join-Path $PSScriptRoot 'version.test.cjs') (Join-Path $PSScriptRoot 'update-package.test.cjs'); Check-Exit 'Update package tests'
+    & $node --test (Join-Path $project 'auth/update-service.test.js'); Check-Exit 'Update service tests'
     & $node $npm ci --prefix (Join-Path $project 'frontend'); Check-Exit 'Frontend dependencies'
     & $node $npm run build --prefix (Join-Path $project 'frontend'); Check-Exit 'Build frontend'
   }
-  if (!$OutputDirectory) { $OutputDirectory = Join-Path $project ('release/DouyinDanmu-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
+  foreach ($binary in @('douyin-pipeline.exe','DouyinDanmu.exe')) {
+    $actualVersion = (Get-Item -LiteralPath (Join-Path $build $binary)).VersionInfo.ProductVersion
+    if ($actualVersion -ne $appVersion) { throw "$binary is version '$actualVersion', expected '$appVersion'. Rebuild before packaging." }
+  }
+  if (!$OutputDirectory) { $OutputDirectory = Join-Path $project ("release/v$appVersion-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '/DouyinDanmu-win-x64-portable') }
   $output = [IO.Path]::GetFullPath($OutputDirectory)
   if (Test-Path $output) { throw 'Output directory already exists. Use a new empty release path; existing data will never be overwritten.' }
   foreach ($folder in @('', 'bin', 'runtime', 'web', 'app/portable', 'app/auth', 'app/collector/proto', 'licenses')) { New-Item -ItemType Directory -Path (Join-Path $output $folder) -Force | Out-Null }
@@ -41,8 +49,8 @@ try {
   Copy-Item -LiteralPath $node -Destination (Join-Path $output 'runtime')
   Copy-Item -LiteralPath (Join-Path $nodeDirectory 'LICENSE') -Destination (Join-Path $output 'licenses/Node-LICENSE.txt')
   Copy-Item -Path (Join-Path $project 'frontend/dist/*') -Destination (Join-Path $output 'web') -Recurse
-  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'launcher.js') -Destination (Join-Path $output 'app/portable')
-  foreach ($name in @('server.js','portable-web.js')) { Copy-Item -LiteralPath (Join-Path $project "auth/$name") -Destination (Join-Path $output 'app/auth') }
+  foreach ($name in @('launcher.js','update-package.js','extract-update.ps1')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $output 'app/portable') }
+  foreach ($name in @('server.js','portable-web.js','update-service.js')) { Copy-Item -LiteralPath (Join-Path $project "auth/$name") -Destination (Join-Path $output 'app/auth') }
   foreach ($name in @('index.js','room-info.js','auth-cookie.js','settings-server.js','session-control.js','durable-files.js','package.json','package-lock.json')) { Copy-Item -LiteralPath (Join-Path $project "collector/$name") -Destination (Join-Path $output 'app/collector') }
   Copy-Item -LiteralPath (Join-Path $project 'backend/scripts/sign.js') -Destination (Join-Path $output 'app/collector')
   Copy-Item -Path (Join-Path $project 'backend/proto/*.proto') -Destination (Join-Path $output 'app/collector/proto')
@@ -52,6 +60,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $output $name), $content, [Text.UTF8Encoding]::new($false))
   }
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.txt') -Destination $output
+  Copy-Item -LiteralPath (Join-Path $project 'VERSION'),(Join-Path $project 'CHANGELOG.md') -Destination $output
+  [IO.File]::WriteAllText((Join-Path $output 'update.json'), (@{ format=1; version=$appVersion; min_host_protocol=1 } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
   Copy-Item -Path (Join-Path $PSScriptRoot 'licenses/*') -Destination (Join-Path $output 'licenses')
   foreach ($license in @(@('protobuf','LICENSE'),@('nlohmann_json','LICENSE.MIT'),@('httplib','LICENSE'),@('zlib','README'))) {
     Copy-Item -LiteralPath (Join-Path $build "_deps/$($license[0])-src/$($license[1])") -Destination (Join-Path $output "licenses/$($license[0])-LICENSE.txt")
@@ -68,7 +78,8 @@ try {
   }
   $manifest = Get-ChildItem -LiteralPath $output -File -Recurse | ForEach-Object { [ordered]@{ path = $_.FullName.Substring($output.Length+1).Replace('\','/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }
   [IO.File]::WriteAllText((Join-Path $output 'manifest.json'), ($manifest | ConvertTo-Json -Depth 3), [Text.UTF8Encoding]::new($false))
-  Compress-Archive -LiteralPath $output -DestinationPath "$output.zip" -CompressionLevel Optimal
-  (Get-FileHash -LiteralPath "$output.zip" -Algorithm SHA256).Hash | Set-Content -LiteralPath "$output.zip.sha256"
-  Write-Host "Portable release: $output.zip"
+  $releaseArchive = "$output.zip"
+  Compress-Archive -LiteralPath $output -DestinationPath $releaseArchive -CompressionLevel Optimal
+  (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash | Set-Content -LiteralPath "$releaseArchive.sha256"
+  Write-Host "Portable release v${appVersion}: $releaseArchive"
 } finally { $env:PATH = $previousPath }

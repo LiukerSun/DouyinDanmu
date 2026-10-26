@@ -13,12 +13,14 @@ import CookieSettings from '../components/CookieSettings'
 import RoomRankings from '../components/RoomRankings'
 import RoomSessions from '../components/RoomSessions'
 import AudienceRanking from '../components/AudienceRanking'
+import UpdatePanel from '../components/UpdatePanel'
+import { useUpdates, isInstalling } from '../hooks/useUpdates'
 import { useRoomStreams } from '../hooks/useRoomStreams'
 import { useRoomReorder } from '../hooks/useRoomReorder'
 import { wealthBands, fansBands, feedMessageTypes } from '../pipeline/message-colors'
 import { completeRoomOrder, reorderVisibleRooms } from '../pipeline/room-order'
 import { type PipelineEvent, messageDisplayKey, messageKind, messageContent } from '../pipeline/messages'
-import { type Room, type Health, request, roomName, isLive, isStale, needsAttention, parseRoomInput, statusLabels, formatNumber as number } from '../pipeline/monitor'
+import { type Room, type Health, type MaintenanceStatus, request, roomName, isLive, isStale, needsAttention, parseRoomInput, statusLabels, formatNumber as number, formatBytes } from '../pipeline/monitor'
 import changelogText from 'virtual:changelog-raw'
 
 import './Pipeline.css'
@@ -81,10 +83,14 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
   const [addOpen, setAddOpen] = useState(false), [settingsOpen, setSettingsOpen] = useState(false), [runtimeOpen, setRuntimeOpen] = useState(false)
   const [colorGuideOpen, setColorGuideOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
+  const updates = useUpdates(!!health?.version || changelogOpen)
   const [profileOpen, setProfileOpen] = useState(false), [settingsRoomId, setSettingsRoomId] = useState('')
   const [roomInput, setRoomInput] = useState(''), [addError, setAddError] = useState('')
   const [removalTargets, setRemovalTargets] = useState<Room[]>([]), [removalError, setRemovalError] = useState('')
   const [inspectedEvent, setInspectedEvent] = useState<PipelineEvent | null>(null)
+  const [compactMessage, setCompactMessage] = useState('')
+  const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null)
+  const [compactSubmitting, setCompactSubmitting] = useState(false)
   const [filter, setFilter] = useState('all'), [keyword, setKeyword] = useState('')
   const [roomContent, setRoomContent] = useState('messages')
   const [frozen, setFrozen] = useState<PipelineEvent[] | null>(null)
@@ -97,18 +103,35 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
     const revision = roomRevision.current
     try {
       const [roomResult, healthResult] = await Promise.allSettled([request<Room[]>('/rooms'), request<Health>('/health')])
+      let maintenanceStatus = healthResult.status === 'fulfilled' ? healthResult.value.maintenance ?? null : null
+      if (healthResult.status === 'rejected') {
+        try { maintenanceStatus = await request<MaintenanceStatus>('/maintenance/status') } catch { /* Keep ordinary connection failure handling. */ }
+      }
+      const maintaining = maintenanceStatus?.vacuum_running === true
+      setMaintenance(maintenanceStatus)
       // A poll started before a removal must not restore the removed cards.
       if (revision === roomRevision.current) {
         if (roomResult.status === 'fulfilled') {
           const next = roomResult.value.filter(room => room.source === 'douyin')
           setRooms(next); setActive(previous => next.some(room => room.live_id === previous) ? previous : next[0]?.live_id || '')
           setSelected(previous => previous.filter(id => next.some(room => room.live_id === id))); setServiceError('')
-        } else setServiceError('房间状态更新失败，当前显示上次成功获取的数据。正在自动重试。')
+        } else setServiceError(maintaining ? '数据库正在整理，当前显示上次获取的数据，完成后自动恢复。' : '房间状态更新失败，当前显示上次成功获取的数据。正在自动重试。')
       }
-      setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
+      setHealth(previous => healthResult.status === 'fulfilled' ? healthResult.value : maintaining ? previous : null)
     } finally { setLoaded(true); loading.current = false }
   }, [])
   useEffect(() => { void load(); const timer = setInterval(() => void load(), 2500); return () => clearInterval(timer) }, [load])
+  const compactDatabase = async () => {
+    setCompactSubmitting(true)
+    setCompactMessage('')
+    try {
+      await request('/maintenance/compact', { method: 'POST', body: '{}' })
+      setMaintenance(previous => previous ? { ...previous, vacuum_queued: true } : previous)
+      setCompactMessage('整理请求已提交。正在进行的压缩完成后开始整理，期间采集与查询会暂停，完成后自动恢复。')
+    } catch (error) { setCompactMessage(error instanceof Error ? error.message : '整理请求失败') }
+    finally { setCompactSubmitting(false) }
+    void load()
+  }
   useEffect(() => { try { localStorage.setItem('monitor:pinned', JSON.stringify(pinned)) } catch { /* Keep pins in memory if browser storage is unavailable. */ } }, [pinned])
   useEffect(() => { try { localStorage.setItem(orderKey, JSON.stringify(roomOrder)) } catch { /* Preserve this session's order when storage is unavailable. */ } }, [orderKey, roomOrder])
   const room = rooms.find(item => item.live_id === active)
@@ -218,6 +241,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
     <header className="global-header">
       <Link className="global-brand" href="/" aria-label="直播台首页"><svg width="27" height="27" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="10" width="6" height="17" rx="3" fill="currentColor" /><rect x="13" y="4" width="6" height="23" rx="3" fill="currentColor" /><rect x="23" y="8" width="6" height="19" rx="3" fill="currentColor" /></svg><strong>直播台</strong></Link>
       <nav aria-label="顶部菜单"><Button variant="ghost" className={!runtimeOpen ? 'is-active' : ''} onPress={() => { setRuntimeOpen(false); setView('overview'); setStatus('all'); setSearch('') }}>直播工作台</Button><Button variant="ghost" className={runtimeOpen ? 'is-active' : ''} onPress={() => setRuntimeOpen(true)}>服务管理</Button></nav>
+      {(updates.status?.update_available || isInstalling(updates.status)) && <Button variant="ghost" size="sm" className="update-notice" onPress={() => setChangelogOpen(true)}><span className="status-dot" />{isInstalling(updates.status) ? '更新中' : <>新版本<span className="update-notice-version"> v{updates.status?.latest_version}</span></>}</Button>}
       <div className="global-context"><span className={'status-dot ' + (serviceReady ? 'good' : 'warn')} /><span>{serviceReady ? '服务已连接' : '正在检查服务'}</span></div>
     </header>
     <Button variant="ghost" className="sidebar-scrim" aria-label="收起导航侧栏" aria-hidden={sidebarCollapsed} isDisabled={sidebarCollapsed} onPress={() => setSidebarCollapsed(true)} />
@@ -338,8 +362,9 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
       <section><h3>粉丝团等级</h3><div className="color-guide-swatches">{fansBands.map(band => <Chip key={band.min} className="message-chip" data-tone={band.tone}>Lv.{band.label}</Chip>)}</div><p>有灯牌资料时显示“名字-等级”；未提供名称时显示“粉丝团-等级”。星守护的灯牌也按此展示。等级颜色表示粉丝团等级，不表示会员状态。</p></section>
       <section><h3>礼物</h3><p>按礼物名称保持固定配色，相同礼物在不同房间中颜色一致。颜色仅用于辨认礼物，不表示礼物价值。</p></section>
     </div></Dialog>
-    <Dialog open={changelogOpen} onChange={setChangelogOpen} title={health?.version ? `更新记录 · 当前 v${health.version}` : '更新记录'}>
-      <div className="changelog-content">{changelogSections.map(section => <section key={section.heading} className="changelog-section"><h3>{section.heading}</h3><p>{section.body}</p></section>)}</div>
+    <Dialog open={changelogOpen} onChange={setChangelogOpen} title="版本与更新">
+      <UpdatePanel updates={updates} currentVersion={health?.version} />
+      <details className="installed-changelog"><summary>查看当前版本的更新记录</summary><div className="changelog-content">{changelogSections.map(section => <section key={section.heading} className="changelog-section"><h3>{section.heading}</h3><p>{section.body}</p></section>)}</div></details>
     </Dialog>
     <Dialog open={profileOpen && !!room} onChange={setProfileOpen} title="主播信息"><div className="anchor-info">
           {room ? <div className="inspector-content">
@@ -368,8 +393,11 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
       <p className="dialog-description">查看采集、存储及推送服务的当前状态。</p>
       {!!health?.collector.spool_quarantine?.files && <InlineFeedback>已保留 {number(health.collector.spool_quarantine.files)} 个未完整写入的采集文件（{(health.collector.spool_quarantine.bytes / 1024).toFixed(1)} KB），可在维护时备份并检查。</InlineFeedback>}
       <div className="health-grid">{[['采集服务', health?.collector.online], [health?.transport === 'local' ? '本地投递' : '消息队列', health?.rabbitmq], ['数据存储', health?.database], [health?.cache_backend === 'sqlite' ? '本地统计' : '统计缓存', health?.redis]].map(([name, ok]) => <div key={String(name)}><DatabaseOutlined /><span>{name}</span><Chip size="sm" color={ok ? 'success' : 'warning'}>{ok ? '在线' : health ? name === '统计缓存' ? '回源模式' : '不可用' : '未知'}</Chip></div>)}</div>
-      <dl className="detail-stats"><div><dt>已处理原始帧</dt><dd>{health ? number(health.frames) : '—'}</dd></div><div><dt>已持久化事件</dt><dd>{health ? number(health.events) : '—'}</dd></div><div><dt>待处理隔离</dt><dd>{health ? number(health.quarantine) : '—'}</dd></div><div><dt>本地待确认日志</dt><dd>{health ? ((health.collector.spool_bytes || 0) / 1024).toFixed(1) + ' KB' : '—'}</dd></div><div><dt>推送连接</dt><dd>{connectedCount} / {enabled.length} 间</dd></div></dl>
+      <dl className="detail-stats"><div><dt>已处理原始帧</dt><dd>{health ? number(health.frames) : '—'}</dd></div><div><dt>已持久化事件</dt><dd>{health ? number(health.events) : '—'}</dd></div><div><dt>待处理隔离</dt><dd>{health ? number(health.quarantine) : '—'}</dd></div><div><dt>本地待确认日志</dt><dd>{health ? ((health.collector.spool_bytes || 0) / 1024).toFixed(1) + ' KB' : '—'}</dd></div><div><dt>推送连接</dt><dd>{connectedCount} / {enabled.length} 间</dd></div><div><dt>数据库大小</dt><dd>{health?.database_bytes != null ? formatBytes(health.database_bytes + (health.wal_bytes || 0)) : '—'}</dd></div><div><dt>数据压缩</dt><dd>{!maintenance ? '—' : !maintenance.compression_enabled ? '已关闭' : maintenance.reencode.length > 0 && maintenance.reencode.every(scope => scope.done) ? '已完成' : '压缩中 · 已完成 ' + maintenance.reencode.filter(scope => scope.done).length + '/' + maintenance.reencode.length + ' 项'}</dd></div></dl>
       <Button variant="secondary" onPress={() => void load()}><ReloadOutlined />刷新状态</Button>
+      {maintenance && <Button variant="secondary" isDisabled={compactSubmitting || maintenance.vacuum_running || maintenance.vacuum_queued} onPress={() => void compactDatabase()}><DatabaseOutlined />{maintenance.vacuum_running ? '正在整理数据库…' : maintenance.vacuum_queued || compactSubmitting ? '等待整理…' : '立即整理数据库'}</Button>}
+      {compactMessage && <InlineFeedback>{compactMessage}</InlineFeedback>}
+      {maintenance?.vacuum_running && <InlineFeedback>整理期间采集与查询会暂停，视数据库大小可能需要几分钟，完成后自动恢复。</InlineFeedback>}
     </Dialog>
   </div>
 }

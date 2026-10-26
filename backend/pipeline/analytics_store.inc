@@ -48,8 +48,8 @@
             }
             Statement migration(db,"SELECT name FROM schema_migrations WHERE name='analytics_v1'");
             if(!migration.row()) {
-                Statement events(db,R"SQL(SELECT e.id,e.live_id,e.body,json_extract(d.body,'$.decoded.gift.diamondCount')
-                  FROM events e LEFT JOIN event_details d ON d.event_id=e.event_id AND json_extract(e.body,'$.type')='gift' ORDER BY e.id)SQL");
+                Statement events(db,R"SQL(SELECT e.id,e.live_id,decode_body(e.body),json_extract(decode_body(d.body),'$.decoded.gift.diamondCount')
+                  FROM events e LEFT JOIN event_details d ON d.event_id=e.event_id AND json_extract(decode_body(e.body),'$.type')='gift' ORDER BY e.id)SQL");
                 while(events.row()) {
                     const auto price=events.str(3);
                     analytics_project(events.number(0),events.str(1),json::parse(events.str(2)),price.empty()?json(nullptr):json::parse(price,nullptr,false));
@@ -58,7 +58,7 @@
             }
             Statement metrics(db,"SELECT name FROM schema_migrations WHERE name='analytics_v2_session_metrics'");
             if(!metrics.row()) {
-                exec("UPDATE analytics_events SET like_count=COALESCE((SELECT json_extract(e.body,'$.like_count') FROM events e WHERE e.id=analytics_events.seq),0) WHERE kind='like'");
+                exec("UPDATE analytics_events SET like_count=COALESCE((SELECT json_extract(decode_body(e.body),'$.like_count') FROM events e WHERE e.id=analytics_events.seq),0) WHERE kind='like'");
                 exec("INSERT INTO schema_migrations VALUES('analytics_v2_session_metrics')");
             }
             // Paid pinned comments (screen_chat) count as chat, like emoji messages.

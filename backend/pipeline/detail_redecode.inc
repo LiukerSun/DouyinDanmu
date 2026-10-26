@@ -19,20 +19,23 @@ static json redecode_details(bool apply) {
         if(raw)sqlite3_close(raw);throw std::runtime_error("Cannot open detail database");
     }
     std::unique_ptr<sqlite3,decltype(&sqlite3_close)> db(raw,sqlite3_close);sqlite3_busy_timeout(raw,5000);
+    register_body_codecs(raw);
     auto exec=[&](const char* sql){if(sqlite3_exec(raw,sql,nullptr,nullptr,nullptr)!=SQLITE_OK)throw std::runtime_error(sqlite3_errmsg(raw));};
     json report={{"apply",apply},{"scanned",0},{"updated",0},{"failed",0},{"promoted",0},{"analyzed_entries",0},{"methods",json::object()}};
     // Materialize identifiers only, so writes do not invalidate an active scan.
     std::vector<std::string> ids;
     // Parser-only changes in versions 6/7 affect notification summaries. Avoid
     // rewriting unrelated chat/gift history merely to advance a version tag.
-    {Statement q(raw,"SELECT d.event_id FROM event_details d JOIN events e ON e.event_id=d.event_id WHERE COALESCE(json_extract(d.body,'$.field_analysis.version'),0)<? OR (COALESCE(json_extract(e.body,'$.parser_version'),0)<? AND json_extract(d.body,'$.method') IN ('WebcastRoomMessage','WebcastCommonTextMessage','WebcastNotifyMessage','WebcastFansclubMessage')) ORDER BY e.id");q.num(1,field_analysis_version).num(2,event_parser_version);while(q.row())ids.push_back(q.str(0));}
+    {Statement q(raw,"SELECT d.event_id FROM event_details d JOIN events e ON e.event_id=d.event_id WHERE COALESCE(json_extract(decode_body(d.body),'$.field_analysis.version'),0)<? OR (COALESCE(json_extract(decode_body(e.body),'$.parser_version'),0)<? AND json_extract(decode_body(d.body),'$.method') IN ('WebcastRoomMessage','WebcastCommonTextMessage','WebcastNotifyMessage','WebcastFansclubMessage')) ORDER BY e.id");q.num(1,field_analysis_version).num(2,event_parser_version);while(q.row())ids.push_back(q.str(0));}
     for(const auto& id:ids) {
         report["scanned"]=report["scanned"].get<int>()+1;
         bool transaction=false;
         try {
-            std::string original,body;
-            {Statement q(raw,"SELECT e.body,d.body FROM events e JOIN event_details d ON d.event_id=e.event_id WHERE e.event_id=?");q.text(1,id);if(!q.row())continue;body=q.str(0);original=q.str(1);}
-            auto old=json::parse(body),detail=json::parse(original);
+            std::string original,body; int original_type=SQLITE_TEXT;
+            // Capture the detail's raw bytes and storage type: the optimistic
+            // concurrency clause below must match the stored representation.
+            {Statement q(raw,"SELECT e.body,d.body FROM events e JOIN event_details d ON d.event_id=e.event_id WHERE e.event_id=?");q.text(1,id);if(!q.row())continue;body=q.decoded(0);original=q.binary(1);original_type=q.stored_type(1);}
+            auto old=json::parse(body),detail=json::parse(decode_body(original));
             const auto payload=decode_saved_base64(detail.at("payload_base64").get<std::string>());
             const auto method=detail.at("method").get<std::string>();
             auto candidate=observed_event(id,method,payload,old.value("timestamp",int64_t(0)));decode_observed(candidate,payload);
@@ -49,9 +52,9 @@ static json redecode_details(bool apply) {
             report["analyzed_entries"]=report["analyzed_entries"].get<int>()+int(detail["field_analysis"]["entries"].size());
             if(apply) {
                 exec("BEGIN IMMEDIATE");transaction=true;
-                Statement update(raw,"UPDATE event_details SET body=? WHERE event_id=? AND body=?");update.text(1,detail.dump()).text(2,id).text(3,original).row();
+                Statement update(raw,"UPDATE event_details SET body=? WHERE event_id=? AND body=?");bind_body(update,1,detail.dump());update.text(2,id);bind_stored(update,3,original,original_type);update.row();
                 if(sqlite3_changes(raw)!=1)throw std::runtime_error("detail changed during re-decode");
-                Statement event(raw,"UPDATE events SET body=json_patch(body,?) WHERE event_id=?");event.text(1,patch.dump()).text(2,id).row();
+                Statement event(raw,"UPDATE events SET body=encode_body(json_patch(decode_body(body),?)) WHERE event_id=?");event.text(1,patch.dump()).text(2,id).row();
                 Statement view(raw,"UPDATE message_views SET body=json_patch(body,?) WHERE live_id=? AND json_extract(body,'$.event_id')=?");view.text(1,patch.dump()).text(2,old.at("live_id").get<std::string>()).text(3,id).row();
                 exec("COMMIT");transaction=false;
             }

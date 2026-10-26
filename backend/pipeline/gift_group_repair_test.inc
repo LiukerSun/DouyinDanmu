@@ -21,8 +21,8 @@ static std::string group_repair_test_gift(Store& store,const std::string& live,i
     store.commit(envelope,envelope.SerializeAsString(),parsed.first,parsed.second);
     if(old_split && !key.empty()) {
         GiftRepairSql sql(std::filesystem::path(env("DATABASE_PATH","/data/pipeline.db")));
-        for(const auto* table:{"events","message_views"})sql.exec(std::string("UPDATE ")+table+
-            " SET body=json_set(body,'$.gift_group_key','"+key+"') WHERE json_extract(body,'$.event_id')='"+id+"'");
+        sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.gift_group_key','"+key+"')) WHERE json_extract(decode_body(body),'$.event_id')='"+id+"'");
+        sql.exec("UPDATE message_views SET body=json_set(body,'$.gift_group_key','"+key+"') WHERE json_extract(body,'$.event_id')='"+id+"'");
     }
     return id;
 }
@@ -36,13 +36,13 @@ void gift_group_repair_restores_split_groups() {
         check(store.analytics_ranking(AnalyticsQuery{},true)["items"][0]["known_gift_value"]=="1650000","Old split fixture really overcounts cumulative gift value");
     }
     GiftRepairSql sql(database.path());
-    sql.exec("UPDATE events SET body=json_set(body,'$.user_name','manual profile','$.fans_club',json('{\"level\":19,\"name\":\"manual club\"}'))");
+    sql.exec("UPDATE events SET body=encode_body(json_set(decode_body(body),'$.user_name','manual profile','$.fans_club',json('{\"level\":19,\"name\":\"manual club\"}')))");
     sql.exec("UPDATE analytics_events SET user_name='manual profile',fans_club='{\"level\":19,\"name\":\"manual club\"}'");
     sql.exec("UPDATE message_views SET body=json_set(body,'$.user_name','manual profile','$.fans_club',json('{\"level\":19,\"name\":\"manual club\"}'))");
     sql.exec("INSERT INTO event_presentations VALUES('room-111:WebcastGiftMessage:5:0','{\"content\":\"manual display label\"}')");
     const auto before=sql.saved();
     const auto identities=sql.rows("SELECT id,event_id FROM events ORDER BY id");
-    const auto facts=sql.rows("SELECT id,json_extract(body,'$.gift_count'),json_extract(body,'$.gift_unit_price'),json_extract(body,'$.timestamp'),json_extract(body,'$.gift_combo'),json_extract(body,'$.user_name'),json_extract(body,'$.fans_club') FROM events ORDER BY id");
+    const auto facts=sql.rows("SELECT id,json_extract(decode_body(body),'$.gift_count'),json_extract(decode_body(body),'$.gift_unit_price'),json_extract(decode_body(body),'$.timestamp'),json_extract(decode_body(body),'$.gift_combo'),json_extract(decode_body(body),'$.user_name'),json_extract(decode_body(body),'$.fans_club') FROM events ORDER BY id");
     const auto analytics_facts=sql.rows("SELECT seq,event_id,live_id,user_id,user_name,occurred_at_ms,gift_unit_price,user_level,fans_club FROM analytics_events ORDER BY seq");
     const auto dry=repair_gift_groups(false);
     check(dry["failed"]==0 && dry["changed_groups"]==1 && dry["removed_display_rows"]==9 && dry["gift_quantity_delta"]==-45 && dry["skipped_groups"]==0,"Dry run diagnoses the complete 55-to-10 repair");
@@ -54,10 +54,10 @@ void gift_group_repair_restores_split_groups() {
     const auto after=sql.saved();
     for(const char* table:{"event_details","receipts"})check(after[table]==before[table],std::string("Group repair preserves ")+table);
     check(sql.rows("SELECT id,event_id FROM events ORDER BY id")==identities,"Group repair preserves delivery sequence and identities");
-    check(sql.rows("SELECT id,json_extract(body,'$.gift_count'),json_extract(body,'$.gift_unit_price'),json_extract(body,'$.timestamp'),json_extract(body,'$.gift_combo'),json_extract(body,'$.user_name'),json_extract(body,'$.fans_club') FROM events ORDER BY id")==facts,"Group repair preserves quantities, prices, times, original combo and manual profiles");
+    check(sql.rows("SELECT id,json_extract(decode_body(body),'$.gift_count'),json_extract(decode_body(body),'$.gift_unit_price'),json_extract(decode_body(body),'$.timestamp'),json_extract(decode_body(body),'$.gift_combo'),json_extract(decode_body(body),'$.user_name'),json_extract(decode_body(body),'$.fans_club') FROM events ORDER BY id")==facts,"Group repair preserves quantities, prices, times, original combo and manual profiles");
     check(sql.rows("SELECT seq,event_id,live_id,user_id,user_name,occurred_at_ms,gift_unit_price,user_level,fans_club FROM analytics_events ORDER BY seq")==analytics_facts,"Group repair changes no analytics price, time or profile fact");
     check(sql.rows("SELECT DISTINCT gift_quantity FROM analytics_events")==json::array({json::array({"1"})}),"All ten analytics deliveries now contribute exactly one unit");
-    check(sql.rows("SELECT json_extract(fields,'$.content') FROM event_presentations WHERE event_id='room-111:WebcastGiftMessage:5:0'")[0][0]=="manual display label","Unrelated presentation repair survives regrouping");
+    check(sql.rows("SELECT json_extract(decode_body(fields),'$.content') FROM event_presentations WHERE event_id='room-111:WebcastGiftMessage:5:0'")[0][0]=="manual display label","Unrelated presentation repair survives regrouping");
     {
         Store store;check_stats(store,"111",1,10);
         const auto snapshot=store.snapshot("111");const auto stream=store.frontend_batch("111",0).at("events");
@@ -95,20 +95,20 @@ void gift_group_repair_separates_recipients_and_skips_unproven_groups() {
         group_repair_test_gift(store,"333",117,46,5,0,10);check_stats(store,"333",3,9);
     }
     GiftRepairSql sql(database.path());sql.exec("DELETE FROM event_details WHERE event_id='room-111:WebcastGiftMessage:113:0'");
-    const auto skipped=sql.rows("SELECT id,body FROM events WHERE json_extract(body,'$.group_id') IN ('43','45') ORDER BY id");
-    const auto mixed_payloads=sql.rows("SELECT event_id,body FROM event_details WHERE event_id LIKE 'room-333:%' ORDER BY event_id");
+    const auto skipped=sql.rows("SELECT id,decode_body(body) FROM events WHERE json_extract(decode_body(body),'$.group_id') IN ('43','45') ORDER BY id");
+    const auto mixed_payloads=sql.rows("SELECT event_id,decode_body(body) FROM event_details WHERE event_id LIKE 'room-333:%' ORDER BY event_id");
     const auto applied=repair_gift_groups(true);
     check(applied["failed"]==0 && applied["changed_groups"]==5 && applied["skipped_groups"]==2 && applied["skipped_events"]==5,"Only independently proven recipient and room partitions repair");
     check(applied["skip_reasons"]["ambiguous_recipient"]==1 && applied["skip_reasons"]["missing_payload"]==1,"Skipped groups retain explicit evidence failure reasons");
-    check(sql.rows("SELECT id,body FROM events WHERE json_extract(body,'$.group_id') IN ('43','45') ORDER BY id")==skipped,"Ambiguous and incomplete groups stay byte-for-byte untouched");
-    check(sql.rows("SELECT DISTINCT json_extract(body,'$.recipient_id'),json_extract(body,'$.display_id') FROM events WHERE live_id='111' AND json_extract(body,'$.group_id')='42'").size()==2,"Different recipients remain distinct even with the same platform group ID");
-    check(sql.rows("SELECT DISTINCT json_extract(body,'$.display_id'),json_extract(body,'$.recipient_id') FROM events WHERE live_id='111' AND json_extract(body,'$.group_id')='44'")==json::array({json::array({"room-111:WebcastGiftMessage:110:0",""})}),"All-missing recipient group retains first identity without inventing a user");
+    check(sql.rows("SELECT id,decode_body(body) FROM events WHERE json_extract(decode_body(body),'$.group_id') IN ('43','45') ORDER BY id")==skipped,"Ambiguous and incomplete groups stay byte-for-byte untouched");
+    check(sql.rows("SELECT DISTINCT json_extract(decode_body(body),'$.recipient_id'),json_extract(decode_body(body),'$.display_id') FROM events WHERE live_id='111' AND json_extract(decode_body(body),'$.group_id')='42'").size()==2,"Different recipients remain distinct even with the same platform group ID");
+    check(sql.rows("SELECT DISTINCT json_extract(decode_body(body),'$.display_id'),json_extract(decode_body(body),'$.recipient_id') FROM events WHERE live_id='111' AND json_extract(decode_body(body),'$.group_id')='44'")==json::array({json::array({"room-111:WebcastGiftMessage:110:0",""})}),"All-missing recipient group retains first identity without inventing a user");
     check(sql.rows("SELECT gift_quantity,gift_unit_price FROM analytics_events WHERE event_id='room-111:WebcastGiftMessage:111:0'")[0]==json::array({"3",nullptr}),"Sparse price remains unknown while its cumulative increment is repaired");
     check(sql.rows("SELECT gift_quantity FROM analytics_events WHERE event_id='room-111:WebcastGiftMessage:112:0'")[0][0]=="0","Late smaller progress adds zero units");
     const auto mixed_id="gift:"+digest(json::array({"room-333",uid,"456","4095","46"}).dump());
-    check(sql.rows("SELECT DISTINCT json_extract(body,'$.recipient_id'),json_extract(body,'$.display_id') FROM events WHERE live_id='333'")==json::array({json::array({"456",mixed_id})}),"Missing-known-missing observations share the unique proven recipient identity");
+    check(sql.rows("SELECT DISTINCT json_extract(decode_body(body),'$.recipient_id'),json_extract(decode_body(body),'$.display_id') FROM events WHERE live_id='333'")==json::array({json::array({"456",mixed_id})}),"Missing-known-missing observations share the unique proven recipient identity");
     check(sql.rows("SELECT gift_quantity,recipient_id FROM analytics_events WHERE live_id='333' ORDER BY seq")==json::array({json::array({"1","456"}),json::array({"2","456"}),json::array({"2","456"})}),"Mixed-recipient repair synchronizes analytics identities and cumulative increments");
-    check(sql.rows("SELECT event_id,body FROM event_details WHERE event_id LIKE 'room-333:%' ORDER BY event_id")==mixed_payloads,"Resolving an omitted recipient never rewrites the saved raw payload");
+    check(sql.rows("SELECT event_id,decode_body(body) FROM event_details WHERE event_id LIKE 'room-333:%' ORDER BY event_id")==mixed_payloads,"Resolving an omitted recipient never rewrites the saved raw payload");
     {
         Store store;check_stats(store,"111",8,19);check_stats(store,"222",1,5);check_stats(store,"333",1,5);
         const auto combined=display_event(store.snapshot("111"),"room-111:WebcastGiftMessage:110:0");

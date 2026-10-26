@@ -6,6 +6,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const { DatabaseSync } = require('node:sqlite');
 const protobuf = require('protobufjs');
+const { decodeBody } = require('./body-codec');
 
 function varint(buffer, offset) {
   let value = 0n, shift = 0n, end = offset;
@@ -89,8 +90,9 @@ function userLevelSummary(root, method, payload, summaries) {
   const Response = root.lookupType('Response'), Gift = root.lookupType('GiftMessage'), User = root.lookupType('User');
   root.resolveAll();
   const db = new DatabaseSync(databasePath, { readOnly: true });
+  db.function('decode_body', { deterministic: true }, decodeBody);
   const summary = db.prepare("SELECT reason, COUNT(*) count, MIN(created_at) first_at, MAX(created_at) last_at FROM quarantine GROUP BY reason ORDER BY count DESC").all();
-  const eventSummary = db.prepare("SELECT live_id,json_extract(body,'$.type') type,COUNT(*) count,MAX(json_extract(body,'$.received_at_ms')) last_received_at FROM events GROUP BY live_id,type").all();
+  const eventSummary = db.prepare("SELECT live_id,json_extract(decode_body(body),'$.type') type,COUNT(*) count,MAX(json_extract(decode_body(body),'$.received_at_ms')) last_received_at FROM events GROUP BY live_id,type").all();
   let rows = db.prepare("SELECT frame_id,reason,raw,created_at FROM quarantine ORDER BY created_at DESC LIMIT 1000").all();
   if (process.env.RAW_CAPTURE_PATH) {
     rows = fs.readdirSync(process.env.RAW_CAPTURE_PATH).filter(file => file.endsWith('.bin')).map(file => {

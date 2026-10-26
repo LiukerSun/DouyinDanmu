@@ -3,16 +3,20 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { gzipSync, gunzipSync } = require('node:zlib');
 const protobuf = require('protobufjs');
 const { repair } = require('./repair-fans-profiles');
+const readBody = value => JSON.parse(typeof value === 'string' ? value : gunzipSync(value).toString('utf8'));
 
-test('exact archived fans profile repairs old events and views, preserves data and is idempotent', async () => {
+for (const storage of ['text', 'gzip']) for (const compression of ['on', 'off']) test(`exact archived fans repair preserves data (${storage}, compression ${compression})`, async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'fans-repair-'));
   const proto = process.env.PROTO_DIR || path.resolve(__dirname, '../backend/proto');
   const database = path.join(temp, 'test.db'), capture = path.join(temp, 'frames');
   fs.mkdirSync(capture);
   const root = await protobuf.load([path.join(proto, 'douyin.proto'), path.join(proto, 'ingest.proto')]);
   const db = new DatabaseSync(database);
+  const previousCompression = process.env.COMPRESSION;
+  process.env.COMPRESSION = compression;
   try {
     db.exec('CREATE TABLE events(id INTEGER PRIMARY KEY,event_id TEXT,live_id TEXT,body TEXT); CREATE TABLE message_views(live_id TEXT,display_id TEXT,last_seq INTEGER,body TEXT);');
     const User = root.lookupType('User');
@@ -31,28 +35,35 @@ test('exact archived fans profile repairs old events and views, preserves data a
       const body = {user_id:n===3?'another-user':uid,user_name:'观众',type:'chat',content:'你好',timestamp:1234,gift_count:0,event_id:`room:WebcastChatMessage:${n}:0`};
       if (n===2) body.fans_club = {name:'已确认',level:12,status:2,member:null};
       const live = n===4?'different-live':'live';
-      db.prepare('INSERT INTO events VALUES(?,?,?,?)').run(n,body.event_id,live,JSON.stringify(body));
+      db.prepare('INSERT INTO events VALUES(?,?,?,?)').run(n,body.event_id,live,storage === 'gzip' ? gzipSync(JSON.stringify(body)) : JSON.stringify(body));
       db.prepare('INSERT INTO message_views VALUES(?,?,?,?)').run(live,body.event_id,n,JSON.stringify(body));
       fs.writeFileSync(path.join(capture,`${n}.bin`),frameFor(n));
       initial.push(body);
     }
     const dry = await repair({database,capture,proto});
     assert.equal(dry.events,1); assert.equal(dry.views,1);
-    assert.deepEqual(JSON.parse(db.prepare('SELECT body FROM events WHERE id=1').get().body),initial[0]);
+    assert.deepEqual(readBody(db.prepare('SELECT body FROM events WHERE id=1').get().body),initial[0]);
     const applied = await repair({database,capture,proto,apply:true});
     assert.ok(fs.existsSync(applied.backup));
-    const body = JSON.parse(db.prepare('SELECT body FROM events WHERE id=1').get().body);
+    const body = readBody(db.prepare('SELECT body FROM events WHERE id=1').get().body);
+    assert.equal(db.prepare('SELECT typeof(body) AS storage FROM events WHERE id=1').get().storage, compression === 'off' ? 'text' : 'blob');
+    assert.equal(db.prepare('SELECT typeof(body) AS storage FROM message_views WHERE last_seq=1').get().storage, 'text');
     assert.equal(body.fans_club.name,'原来阿'); assert.equal(body.fans_club.level,10);
     const {fans_club,...rest}=body; assert.deepEqual(rest,initial[0]);
     assert.deepEqual(JSON.parse(db.prepare('SELECT body FROM message_views WHERE last_seq=1').get().body),body);
-    const known=JSON.parse(db.prepare('SELECT body FROM events WHERE id=2').get().body).fans_club;
+    const known=readBody(db.prepare('SELECT body FROM events WHERE id=2').get().body).fans_club;
     assert.equal(known.name,'已确认'); assert.equal(known.level,12); assert.equal(known.status,2);
     // Explicit unknown status must not become a contradictory inferred member.
     assert.equal(known.member,null);
-    for(const n of [3,4]) assert.deepEqual(JSON.parse(db.prepare('SELECT body FROM events WHERE id=?').get(n).body),initial[n-1]);
+    for(const n of [3,4]) assert.deepEqual(readBody(db.prepare('SELECT body FROM events WHERE id=?').get(n).body),initial[n-1]);
     assert.equal(db.prepare('SELECT count(*) n FROM events').get().n,4);
     assert.equal((await repair({database,capture,proto})).events,0);
-  } finally { db.close(); fs.rmSync(temp,{recursive:true,force:true}); }
+    db.prepare('UPDATE events SET body=? WHERE id=1').run(Buffer.from([1, 2, 3, 4]));
+    await assert.rejects(repair({database,capture,proto}), /undecodable body/i);
+  } finally {
+    if (previousCompression === undefined) delete process.env.COMPRESSION; else process.env.COMPRESSION = previousCompression;
+    db.close(); fs.rmSync(temp,{recursive:true,force:true});
+  }
 });
 
 test('fans repair synchronizes only matching analytics profiles and commits all projections atomically', async () => {

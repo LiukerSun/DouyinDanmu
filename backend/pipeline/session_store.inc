@@ -85,7 +85,7 @@
                     Statement scan(db,"SELECT body FROM events WHERE live_id=? ORDER BY id");scan.text(1,live);
                     int64_t last=0;
                     while(scan.row()) {
-                        const auto e=json::parse(scan.str(0));
+                        const auto e=json::parse(scan.decoded(0));
                         const auto at=session_event_time(e);last=at;
                         if(session_end_signal(e)) { session_end_unlocked(live,at,"backfill"); continue; }
                         const auto session=session_activity_unlocked(live,e.value("room_id",""),at,"backfill");

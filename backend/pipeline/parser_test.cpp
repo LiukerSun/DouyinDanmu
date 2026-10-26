@@ -19,6 +19,7 @@ static int64_t now_ms() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 #include "sha256.inc"
+#include "gzip_codec.inc"
 
 #ifndef PARSER_BASELINE
 #include "event_parser.inc"

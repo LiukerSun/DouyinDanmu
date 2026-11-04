@@ -7,11 +7,11 @@ import InlineFeedback from './InlineFeedback'
 import PipelineMessage from './PipelineMessage'
 import MessageDetails from './MessageDetails'
 import { request } from '../pipeline/monitor'
-import { exactCount, rankingBounds, rankingQuery, type RankingMeta, type RankingPeriod, type RankingResult, type RankingUser } from '../pipeline/rankings'
+import { customRankingBounds, exactCount, rankingBounds, rankingQuery, type RankingMeta, type RankingPeriod, type RankingResult, type RankingUser } from '../pipeline/rankings'
 import type { PipelineEvent } from '../pipeline/messages'
 import './RoomRankings.css'
 
-const periods = [{ id: 'all', label: '全部已采集记录' }, { id: 'today', label: '今天' }, { id: 'week', label: '近 7 天' }]
+const periods = [{ id: 'all', label: '全部已采集记录' }, { id: 'today', label: '今天' }, { id: 'week', label: '近 7 天' }, { id: 'thisWeek', label: '本周' }, { id: 'lastWeek', label: '上周' }, { id: 'thisMonth', label: '本月' }, { id: 'lastMonth', label: '上月' }, { id: 'custom', label: '自定义日期' }]
 const observedTime = (value: number) => new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
 
 function RoomUserHistory({ room, roomName, user, meta, onBack }: { room: string; roomName: string; user: RankingUser; meta: RankingMeta; onBack: () => void }) {
@@ -46,7 +46,7 @@ function RoomUserHistory({ room, roomName, user, meta, onBack }: { room: string;
 }
 
 export default function RoomRankings({ room, roomName }: { room: string; roomName: string }) {
-  const [kind, setKind] = useState('chat'), [period, setPeriod] = useState<RankingPeriod>('all'), [sort, setSort] = useState('value')
+  const [kind, setKind] = useState('chat'), [period, setPeriod] = useState<RankingPeriod | 'custom'>('all'), [sort, setSort] = useState('value')
   const [page, setPage] = useState<{ offset: number; snapshot?: string }>({ offset: 0 })
   const [revision, setRevision] = useState(0)
   const [response, setResponse] = useState<{ key: string; data: RankingResult; updated: number } | null>(null)
@@ -54,28 +54,38 @@ export default function RoomRankings({ room, roomName }: { room: string; roomNam
   const [inspected, setInspected] = useState<RankingUser | null>(null)
   const scroll = useRef<HTMLDivElement>(null)
   const savedScroll = useRef(0)
-  const bounds = useMemo(() => rankingBounds(period), [period, revision])
-  const query = rankingQuery(room, bounds, page.offset, page.snapshot, sort)
+  const [dates, setDates] = useState({ from: '', to: '' })
+  const [customBounds, setCustomBounds] = useState<{ from_ms: number; to_ms: number } | null>(null)
+  const draftBounds = customRankingBounds(dates.from, dates.to)
+  const bounds = useMemo(() => period === 'custom' ? customBounds : rankingBounds(period), [period, revision, customBounds])
+  const query = rankingQuery(room, bounds ?? {}, page.offset, page.snapshot, sort)
   const key = `${kind}:${query}:${revision}`
-  const result = response?.key === key ? response.data : null
+  const result = bounds && response?.key === key ? response.data : null
   useEffect(() => {
+    if (!bounds) { setLoading(false); setError(''); return }
     const controller = new AbortController()
     setLoading(true); setError('')
     void request<RankingResult>(`/analytics/${kind}-ranking?${query}`, { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted) { setResponse({ key, data, updated: Date.now() }); scroll.current?.scrollTo({ top: 0 }) }
     }).catch(reason => { if (!controller.signal.aborted) setError((reason as Error).message) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [kind, query, key])
+  }, [kind, query, key, bounds])
   const resetPage = () => { setPage({ offset: 0 }); setInspected(null) }
   const inspect = (user: RankingUser) => { savedScroll.current = scroll.current?.scrollTop ?? 0; setInspected(user) }
   if (inspected && result) return <RoomUserHistory room={room} roomName={roomName} user={inspected} meta={result.meta} onBack={() => { setInspected(null); requestAnimationFrame(() => scroll.current?.scrollTo({ top: savedScroll.current })) }} />
   return <div className="room-rankings">
     <div className="ranking-toolbar">
       <StudioFilters label="排行榜类型" className="ranking-kind" value={kind} onChange={value => { setKind(value); resetPage() }} options={[{ id: 'chat', label: '弹幕榜' }, { id: 'gift', label: '礼物榜' }]} />
-      <div className="ranking-options"><StudioSelect label="排行榜时间范围" value={period} options={periods} onChange={value => { setPeriod(value as RankingPeriod); resetPage() }} />
+      <div className="ranking-options"><StudioSelect label="排行榜时间范围" value={period} options={periods} onChange={value => { setPeriod(value as RankingPeriod | 'custom'); resetPage() }} />
         {kind === 'gift' && <StudioSelect label="礼物榜排序" value={sort} options={[{ id: 'value', label: '按已知价值' }, { id: 'quantity', label: '按礼物数量' }]} onChange={value => { setSort(value); resetPage() }} />}
-        <Button size="sm" variant="secondary" aria-label="刷新榜单" isDisabled={loading} onPress={() => { resetPage(); setRevision(n => n + 1) }}><ReloadOutlined />刷新榜单</Button></div>
+        <Button size="sm" variant="secondary" aria-label="刷新榜单" isDisabled={loading || !bounds} onPress={() => { resetPage(); setRevision(n => n + 1) }}><ReloadOutlined />刷新榜单</Button></div>
     </div>
+    {period === 'custom' && <form className="ranking-date-range" onSubmit={event => { event.preventDefault(); if (draftBounds) { setCustomBounds(draftBounds); resetPage(); setRevision(n => n + 1) } }}>
+      <label>开始日期<input type="date" value={dates.from} max={dates.to || undefined} onChange={event => setDates(value => ({ ...value, from: event.target.value }))} /></label>
+      <label>结束日期<input type="date" value={dates.to} min={dates.from || undefined} onChange={event => setDates(value => ({ ...value, to: event.target.value }))} /></label>
+      <Button type="submit" size="sm" variant="secondary" isDisabled={!draftBounds}>应用日期</Button>
+      <span role="status">{!draftBounds ? '请选择有效的起止日期，开始日期不能晚于结束日期。' : '按本地时区统计，包含结束日期当天；修改后点击应用日期。'}</span>
+    </form>}
     <div className="ranking-context"><span><strong>{roomName}</strong> · 仅统计本房间采集记录</span><span>{result ? `${exactCount(result.total)} 位用户` : loading ? '正在统计…' : ''}</span></div>
     {kind === 'gift' && <p className="ranking-note">礼物连送按新增数量计入；价值单位为钻石，缺少价格的礼物单独标注。</p>}
     {error && <InlineFeedback action={<Button size="sm" variant="ghost" onPress={() => setRevision(n => n + 1)}>重试</Button>}>{error}</InlineFeedback>}

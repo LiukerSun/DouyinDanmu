@@ -54,7 +54,7 @@
 
 ## Windows 便携版
 
-[下载 v2.4.0 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.4.0/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.4.0/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.4.0)
+[下载 v2.6.0 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.6.0/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.6.0/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.6.0)
 
 系统要求：**Windows 10（1903 或更新版本）/ Windows 11，x64**。运行环境已包含在发布包中，无需安装 Docker、Node.js、数据库或编译器。
 

@@ -52,3 +52,9 @@
   .ranking-pagination { flex-wrap: wrap; }
   .ranking-history-heading { align-items: flex-start; flex-wrap: wrap; }
 }
+
+.ranking-date-range { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 0 18px 14px; }
+.ranking-date-range label { display: flex; flex-direction: column; gap: 4px; color: var(--studio-ink); font-size: 12px; }
+.ranking-date-range input { min-width: 0; border: 1px solid var(--studio-line); border-radius: 6px; padding: 6px 8px; color: var(--studio-ink); background: var(--studio-surface, white); font: inherit; }
+.ranking-date-range input:focus-visible { outline: 2px solid #6155d9; outline-offset: 2px; }
+.ranking-date-range > span { flex-basis: 100%; color: var(--studio-muted); font-size: 12px; }

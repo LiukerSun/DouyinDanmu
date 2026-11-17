@@ -21,14 +21,14 @@ async function settingsRequest(liveId: string, method = 'GET', cookie?: string):
   return data
 }
 
-type Props = { onSaved: () => void; liveId: string }
+type Props = { onSaved: () => void; liveId: string; roomUrl: string }
 
 export default function CookieSettings(props: Props) {
   // Switching rooms discards the entire credential draft and all local UI state.
   return <RoomCookieSettings key={props.liveId} {...props} />
 }
 
-function RoomCookieSettings({ onSaved, liveId }: Props) {
+function RoomCookieSettings({ onSaved, liveId, roomUrl }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [cookie, setCookie] = useState('')
   const [visible, setVisible] = useState(false)
@@ -87,7 +87,7 @@ function RoomCookieSettings({ onSaved, liveId }: Props) {
       <Label htmlFor="douyin-cookie-input">Cookie 请求头</Label>
       <div className="cookie-input-row"><Input id="douyin-cookie-input" type={visible ? 'text' : 'password'} value={cookie} onChange={event => { setCookie(event.target.value); setMessage('') }} placeholder={status === 'configured' ? '已保存的内容不会回显；粘贴新的 Cookie 可替换' : '粘贴完整 Cookie 值，支持 Cookie: 前缀'} maxLength={32768} autoComplete="off" spellCheck={false} disabled={busy} /><Button type="button" variant="ghost" isIconOnly size="sm" className="cookie-visibility" aria-label={visible ? '隐藏 Cookie' : '显示 Cookie'} onPress={() => setVisible(!visible)} isDisabled={busy}>{visible ? <EyeInvisibleOutlined /> : <EyeOutlined />}</Button></div>
       <div className="cookie-settings-actions"><Button type="button" variant="secondary" className="cookie-paste-button" isDisabled={busy} onPress={paste}><CopyOutlined />从剪贴板粘贴</Button><Button type="submit" className="cookie-save-button" isDisabled={busy || !cookie.trim()}><SaveOutlined />{busy ? '正在应用…' : '保存并重连'}</Button><Button type="button" variant="ghost" className="cookie-clear-button" isDisabled={busy || status === 'anonymous' || !status} onPress={() => void save(true)}><DeleteOutlined />清除并使用游客</Button></div>
-      <Accordion className="cookie-help"><Accordion.Item><Accordion.Heading><Accordion.Trigger>如何获取 Cookie？<Accordion.Indicator /></Accordion.Trigger></Accordion.Heading><Accordion.Panel><Accordion.Body><ol><li>在浏览器打开<Link href={`https://live.douyin.com/${liveId}`} target="_blank" rel="noreferrer">抖音直播间</Link>并登录需要用于此房间的账号。</li><li>按 F12 打开开发者工具，选择 Network（网络），刷新页面。</li><li>选择发往 live.douyin.com 的请求，在 Request Headers（请求标头）里复制 Cookie 的完整值。使用不同账号时，可通过不同浏览器个人资料分别登录。</li></ol></Accordion.Body></Accordion.Panel></Accordion.Item></Accordion>
+      <Accordion className="cookie-help"><Accordion.Item><Accordion.Heading><Accordion.Trigger>如何获取 Cookie？<Accordion.Indicator /></Accordion.Trigger></Accordion.Heading><Accordion.Panel><Accordion.Body><ol><li>在浏览器打开<Link href={roomUrl} target="_blank" rel="noreferrer">抖音直播间</Link>并登录需要用于此房间的账号。</li><li>按 F12 打开开发者工具，选择 Network（网络），刷新页面。</li><li>选择发往 live.douyin.com 的请求，在 Request Headers（请求标头）里复制 Cookie 的完整值。使用不同账号时，可通过不同浏览器个人资料分别登录。</li></ol></Accordion.Body></Accordion.Panel></Accordion.Item></Accordion>
       <p className="cookie-storage-note">仅保存在本机采集服务中，保存后输入框自动清空。无需把 Cookie 发到聊天里。</p>
     </Form>}
     {error && <InlineFeedback>{error}</InlineFeedback>}

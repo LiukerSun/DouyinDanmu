@@ -1,6 +1,7 @@
 const { roomCookies: defaultRoomCookies, mergeCookieHeaders, hasTtwid } = require('./auth-cookie');
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 const ORIGIN = 'https://live.douyin.com';
+const roomAddressId = /^\d{1,32}$/;
 
 // Protect integer tokens before JSON.parse: both room and user IDs exceed 2^53.
 function parseLosslessJson(text) {
@@ -40,10 +41,10 @@ function avatarUrl(anchor) {
   return '';
 }
 
-function normalize(info, checkedAt) {
+function normalize(info, checkedAt, allowMissingRoomId = false) {
   const room = info.room || {}, anchor = info.anchor || room.owner || {};
   const roomId = idValue(room.id_str) || idValue(info.roomId) || idValue(room.id);
-  if (!roomId) throw new Error('抖音未返回有效房间 ID');
+  if (!roomId && !allowMissingRoomId) throw new Error('抖音未返回有效房间 ID');
   const status = String(room.status ?? room.status_str ?? '');
   const started = nonnegativeNumber(room.start_time ?? room.live_start_time);
   return {
@@ -52,7 +53,7 @@ function normalize(info, checkedAt) {
     // Only explicit server room states are authoritative; missing data is not offline.
     live_status: status === '2' ? 'live' : status === '4' ? 'offline' : 'unknown',
     anchor: {
-      id: idValue(anchor.id_str) || idValue(anchor.id),
+      id: idValue(anchor.id_str) || idValue(anchor.id) || idValue(anchor.uid),
       sec_uid: textValue(anchor.sec_uid),
       nickname: textValue(anchor.nickname),
       avatar_url: avatarUrl(anchor),
@@ -63,6 +64,31 @@ function normalize(info, checkedAt) {
     live_started_at_ms: started && Number.isSafeInteger(started * 1000) ? started * 1000 : null,
     checked_at_ms: checkedAt,
   };
+}
+
+function parseAnchorProfile(body, anchorId, checkedAt) {
+  const { status_code, user } = parseLosslessJson(body);
+  if (status_code !== 0 || idValue(user?.uid) !== anchorId) return null;
+
+  const status = String(user.live_status);
+  const roomId = idValue(user.room_id_str) || idValue(user.room_id);
+  // Offline anchors can still carry the room ID from their last session.
+  if (status === '0') {
+    const lastRoomId = roomId && roomId !== '0' ? roomId : '';
+    const metadata = normalize({ room: { id_str: lastRoomId, status: 4 }, anchor: user }, checkedAt, true);
+    return { metadata, webRid: '' };
+  }
+  if (status !== '1' || !roomId || roomId === '0') {
+    throw new Error('抖音未返回可用的主播开播状态或房间 ID');
+  }
+
+  let room = {};
+  if (typeof user.room_data === 'string' && user.room_data) {
+    try { room = parseLosslessJson(user.room_data) || {}; } catch {}
+  }
+  const webRid = idValue(room.owner?.web_rid);
+  const metadata = normalize({ room: { ...room, id_str: roomId, status: 2 }, anchor: user }, checkedAt);
+  return { metadata, webRid: roomAddressId.test(webRid) && webRid !== anchorId ? webRid : '' };
 }
 
 function parseRoomApi(body, liveId, checkedAt = Date.now()) {
@@ -187,17 +213,44 @@ function createRoomInfoClient({ fetchImpl = globalThis.fetch, now = Date.now, ti
     }
     return cache.pending;
   }
-  async function fetchRoomInfo(liveId) {
-    if (typeof liveId !== 'string' || !/^\d{1,30}$/.test(liveId)) throw new Error('直播间 ID 必须为数字字符串');
-    const cookie = await getCookie(liveId);
+  async function fetchByWebRid(liveId, cookie) {
     const params = new URLSearchParams({ aid: '6383', app_name: 'douyin_web', live_id: '1', device_platform: 'web', web_rid: liveId, enter_from: 'web_live', cookie_enabled: 'true' });
-    let metadata;
     try {
       const { body } = await request(ORIGIN + '/webcast/room/web/enter/?' + params, cookie);
-      metadata = parseRoomApi(body, liveId, now());
+      return parseRoomApi(body, liveId, now());
     } catch {
       const { body } = await request(ORIGIN + '/' + liveId, cookie);
-      metadata = parseRoomPage(body, liveId, now());
+      return parseRoomPage(body, liveId, now());
+    }
+  }
+  async function fetchRoomInfo(liveId) {
+    if (typeof liveId !== 'string' || !roomAddressId.test(liveId)) throw new Error('直播间 ID 必须为数字字符串');
+    const cookie = await getCookie(liveId);
+    let metadata;
+    try {
+      metadata = await fetchByWebRid(liveId, cookie);
+    } catch (roomError) {
+      // An anchor_id link can also be stored as a numeric monitoring ID.
+      const params = new URLSearchParams({ aid: '6383', user_id: liveId });
+      let body;
+      try { ({ body } = await request(ORIGIN + '/aweme/v1/web/user/profile/other/?' + params, cookie)); }
+      catch { throw roomError; }
+      let profile;
+      try { profile = parseAnchorProfile(body, liveId, now()); }
+      catch (error) {
+        if (error instanceof SyntaxError) throw roomError;
+        throw new Error(error.message + '（原直播间查询失败：' + roomError.message + '）', { cause: roomError });
+      }
+      if (!profile) throw roomError;
+      metadata = profile.metadata;
+      if (profile.webRid) {
+        try {
+          const details = await fetchByWebRid(profile.webRid, cookie);
+          if (details.room_id === metadata.room_id && details.anchor.id === liveId && details.live_status === 'live') {
+            metadata = details;
+          }
+        } catch { /* Verified profile data is sufficient to connect. */ }
+      }
     }
     return { roomId: metadata.room_id, cookie, metadata };
   }

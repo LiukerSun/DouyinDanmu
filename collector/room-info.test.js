@@ -107,6 +107,55 @@ test('public API empty response falls back to SSR and reuses cookie within TTL',
   assert.equal(urls.filter(url => url === 'https://live.douyin.com/').length, 1);
 });
 
+test('anchor IDs resolve to the current internal room and verified room details', async () => {
+  const fetchRoomInfo = createRoomInfoClient({ now: () => checkedAt, fetchImpl: async (address, options) => {
+    const url = new URL(address);
+    if (url.pathname === '/') return response('<html>Home</html>', 200, true);
+    assert.equal(options.headers.Cookie, 'ttwid=test-fixture');
+    if (url.pathname.includes('/profile/other/')) {
+      assert.equal(url.searchParams.get('user_id'), USER_ID);
+      return response('{"status_code":0,"user":{"uid":' + USER_ID + ',"live_status":1,"room_id":' + ROOM_ID
+        + ',"room_data":' + JSON.stringify(JSON.stringify({ owner: { web_rid: LIVE_ID } })) + '}}');
+    }
+    if (url.pathname === '/' + LIVE_ID) {
+      return response(page({ ...offline, room: { ...offline.room, status: 2 } }));
+    }
+    return response('<html>No room details</html>');
+  } });
+  const result = await fetchRoomInfo(USER_ID);
+  assert.equal(result.roomId, ROOM_ID);
+  assert.equal(result.metadata.anchor.id, USER_ID);
+  assert.equal(result.metadata.live_status, 'live');
+  assert.equal(result.metadata.title, offline.room.title);
+});
+
+test('verified anchor profiles distinguish offline from a missing live room or mismatched user', async () => {
+  let user = { uid: USER_ID, nickname: '测试主播', live_status: 0, room_id_str: '0' };
+  const fetchRoomInfo = createRoomInfoClient({ fetchImpl: async address => {
+    const { pathname } = new URL(address);
+    if (pathname === '/') return response('<html>Home</html>', 200, true);
+    if (pathname.includes('/profile/other/')) return response(JSON.stringify({ status_code: 0, user }));
+    return response('<html>No room details</html>');
+  } });
+  const offlineResult = await fetchRoomInfo(USER_ID);
+  assert.equal(offlineResult.metadata.live_status, 'offline');
+  assert.equal(offlineResult.roomId, '');
+  assert.equal(offlineResult.metadata.anchor.id, USER_ID);
+  user = { ...user, room_id_str: ROOM_ID };
+  const endedResult = await fetchRoomInfo(USER_ID);
+  assert.equal(endedResult.metadata.live_status, 'offline');
+  assert.equal(endedResult.metadata.anchor.id, USER_ID);
+  user = { ...user, live_status: 1, room_id_str: '0' };
+  await assert.rejects(fetchRoomInfo(USER_ID), /主播开播状态或房间 ID/);
+  await assert.rejects(fetchRoomInfo(USER_ID), /原直播间查询失败：抖音页面未返回该直播间的可验证资料/);
+  user = { ...user, room_id_str: ROOM_ID };
+  const liveResult = await fetchRoomInfo(USER_ID);
+  assert.equal(liveResult.roomId, ROOM_ID);
+  assert.equal(liveResult.metadata.anchor.id, USER_ID);
+  user = { ...user, uid: '1234' };
+  await assert.rejects(fetchRoomInfo(USER_ID), /可验证资料/);
+});
+
 test('network failure, HTTP error, and invalid pages reject instead of returning offline', async () => {
   for (const failure of ['network', 'http', 'page']) {
     const fetchRoomInfo = createRoomInfoClient({ fetchImpl: async url => {

@@ -5,7 +5,7 @@ export type Room = {
   live_id: string; source: string; title: string; enabled: boolean; status: string; detail: string; stats: Stats; metadata_stale: boolean
   metadata: null | {
     room_id: string; title: string; live_status: 'live' | 'offline' | 'unknown'; checked_at_ms: number; live_started_at_ms: number | null
-    anchor: { nickname: string; avatar_url: string; display_id: string; signature: string; follower_count?: number | null }
+    anchor: { id: string; nickname: string; avatar_url: string; display_id: string; signature: string; follower_count?: number | null }
   }
 }
 export type MaintenanceStatus = {
@@ -26,6 +26,9 @@ export const formatBytes = (value: number) => {
   return size.toFixed(1) + ' ' + units[unit]
 }
 export const roomName = (room: Room) => room.metadata?.anchor.nickname || room.live_id
+export const douyinRoomUrl = (room: Room) => room.metadata?.anchor.id === room.live_id
+  ? `https://live.douyin.com/?anchor_id=${room.live_id}`
+  : `https://live.douyin.com/${room.live_id}`
 export const isStale = (room: Room) => !room.metadata || room.metadata_stale || Date.now() - room.metadata.checked_at_ms > 180000
 export const isLive = (room: Room) => !isStale(room) && room.metadata?.live_status === 'live'
 export const needsAttention = (room: Room) => room.enabled && ['failed', 'backpressured', 'reconnecting'].includes(room.status)
@@ -43,7 +46,16 @@ export function parseRoomInput(input: string) {
   for (const token of tokens) {
     let id = /^\d{1,32}$/.test(token) ? token : ''
     if (!id) {
-      try { const url = new URL(token.startsWith('live.douyin.com/') ? 'https://' + token : token); if (['http:', 'https:'].includes(url.protocol) && url.hostname === 'live.douyin.com') id = url.pathname.match(/^\/(\d{1,32})\/?$/)?.[1] || '' } catch { /* Invalid input is reported below. */ }
+      try {
+        const url = new URL(/^live\.douyin\.com[/?]/.test(token) ? 'https://' + token : token)
+        if (['http:', 'https:'].includes(url.protocol) && url.hostname === 'live.douyin.com') {
+          id = url.pathname.match(/^\/(\d{1,32})\/?$/)?.[1] || ''
+          if (url.pathname === '/') {
+            const anchors = url.searchParams.getAll('anchor_id')
+            if (anchors.length === 1 && /^\d{1,32}$/.test(anchors[0])) id = anchors[0]
+          }
+        }
+      } catch { /* Invalid input is reported below. */ }
     }
     if (id) { if (!ids.includes(id)) ids.push(id) } else invalid.push(token)
   }

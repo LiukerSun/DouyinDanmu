@@ -44,15 +44,15 @@ export function parseRoomInput(input: string) {
   const tokens = input.trim().split(/[\s,，;；]+/).filter(Boolean)
   const ids: string[] = [], invalid: string[] = []
   for (const token of tokens) {
-    let id = /^\d{1,30}$/.test(token) ? token : ''
+    let id = /^\d{1,32}$/.test(token) ? token : ''
     if (!id) {
       try {
         const url = new URL(/^live\.douyin\.com[/?]/.test(token) ? 'https://' + token : token)
         if (['http:', 'https:'].includes(url.protocol) && url.hostname === 'live.douyin.com') {
-          id = url.pathname.match(/^\/(\d{1,30})\/?$/)?.[1] || ''
+          id = url.pathname.match(/^\/(\d{1,32})\/?$/)?.[1] || ''
           if (url.pathname === '/') {
             const anchors = url.searchParams.getAll('anchor_id')
-            if (anchors.length === 1 && /^\d{1,30}$/.test(anchors[0])) id = anchors[0]
+            if (anchors.length === 1 && /^\d{1,32}$/.test(anchors[0])) id = anchors[0]
           }
         }
       } catch { /* Invalid input is reported below. */ }

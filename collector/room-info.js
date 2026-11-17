@@ -1,7 +1,7 @@
 const { roomCookies: defaultRoomCookies, mergeCookieHeaders, hasTtwid } = require('./auth-cookie');
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 const ORIGIN = 'https://live.douyin.com';
-const roomAddressId = /^\d{1,30}$/;
+const roomAddressId = /^\d{1,32}$/;
 
 // Protect integer tokens before JSON.parse: both room and user IDs exceed 2^53.
 function parseLosslessJson(text) {
@@ -53,7 +53,7 @@ function normalize(info, checkedAt, allowMissingRoomId = false) {
     // Only explicit server room states are authoritative; missing data is not offline.
     live_status: status === '2' ? 'live' : status === '4' ? 'offline' : 'unknown',
     anchor: {
-      id: idValue(anchor.id_str) || idValue(anchor.id),
+      id: idValue(anchor.id_str) || idValue(anchor.id) || idValue(anchor.uid),
       sec_uid: textValue(anchor.sec_uid),
       nickname: textValue(anchor.nickname),
       avatar_url: avatarUrl(anchor),
@@ -72,8 +72,10 @@ function parseAnchorProfile(body, anchorId, checkedAt) {
 
   const status = String(user.live_status);
   const roomId = idValue(user.room_id_str) || idValue(user.room_id);
-  if (status === '0' && (!roomId || roomId === '0')) {
-    const metadata = normalize({ room: { status: 4 }, anchor: user }, checkedAt, true);
+  // Offline anchors can still carry the room ID from their last session.
+  if (status === '0') {
+    const lastRoomId = roomId && roomId !== '0' ? roomId : '';
+    const metadata = normalize({ room: { id_str: lastRoomId, status: 4 }, anchor: user }, checkedAt, true);
     return { metadata, webRid: '' };
   }
   if (status !== '1' || !roomId || roomId === '0') {
@@ -230,10 +232,15 @@ function createRoomInfoClient({ fetchImpl = globalThis.fetch, now = Date.now, ti
     } catch (roomError) {
       // An anchor_id link can also be stored as a numeric monitoring ID.
       const params = new URLSearchParams({ aid: '6383', user_id: liveId });
-      const { body } = await request(ORIGIN + '/aweme/v1/web/user/profile/other/?' + params, cookie);
+      let body;
+      try { ({ body } = await request(ORIGIN + '/aweme/v1/web/user/profile/other/?' + params, cookie)); }
+      catch { throw roomError; }
       let profile;
       try { profile = parseAnchorProfile(body, liveId, now()); }
-      catch (error) { if (error instanceof SyntaxError) throw roomError; throw error; }
+      catch (error) {
+        if (error instanceof SyntaxError) throw roomError;
+        throw new Error(error.message + '（原直播间查询失败：' + roomError.message + '）', { cause: roomError });
+      }
       if (!profile) throw roomError;
       metadata = profile.metadata;
       if (profile.webRid) {

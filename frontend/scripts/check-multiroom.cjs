@@ -40,6 +40,8 @@ async function main() {
   assert.deepEqual(parseRoomInput(`https://live.douyin.com/123?anchor_id=${anchorId}`), { ids: ['123'], invalid: [] });
   assert.equal(parseRoomInput(anchorUrl + '&anchor_id=456').invalid.length, 1);
   assert.equal(parseRoomInput('https://live.douyin.com/?anchor_id=not-a-number').invalid.length, 1);
+  const longRoomId = '1'.repeat(32);
+  assert.deepEqual(parseRoomInput(longRoomId), { ids: [longRoomId], invalid: [] });
   assert.equal(douyinRoomUrl({ live_id: anchorId, metadata: { anchor: { id: anchorId } } }), anchorUrl);
   assert.equal(douyinRoomUrl({ live_id: '123', metadata: { anchor: { id: anchorId } } }), 'https://live.douyin.com/123');
   assert.equal(parseRoomInput('https://evil.example/live.douyin.com/123').invalid.length, 1);

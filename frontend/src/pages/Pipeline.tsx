@@ -20,7 +20,7 @@ import { useRoomReorder } from '../hooks/useRoomReorder'
 import { wealthBands, fansBands, feedMessageTypes } from '../pipeline/message-colors'
 import { completeRoomOrder, reorderVisibleRooms } from '../pipeline/room-order'
 import { type PipelineEvent, messageDisplayKey, messageKind, messageContent } from '../pipeline/messages'
-import { type Room, type Health, type MaintenanceStatus, request, roomName, isLive, isStale, needsAttention, parseRoomInput, statusLabels, formatNumber as number, formatBytes } from '../pipeline/monitor'
+import { type Room, type Health, type MaintenanceStatus, request, roomName, douyinRoomUrl, isLive, isStale, needsAttention, parseRoomInput, statusLabels, formatNumber as number, formatBytes } from '../pipeline/monitor'
 import changelogText from 'virtual:changelog-raw'
 
 import './Pipeline.css'
@@ -368,7 +368,7 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
     </Dialog>
     <Dialog open={profileOpen && !!room} onChange={setProfileOpen} title="主播信息"><div className="anchor-info">
           {room ? <div className="inspector-content">
-            <div className="inspector-profile"><Avatar key={room.metadata?.anchor.avatar_url || room.live_id} room={room} /><h3>{roomName(room)}</h3><Link href={'https://live.douyin.com/' + room.live_id} target="_blank" rel="noreferrer">打开抖音直播间 <span aria-hidden="true">↗</span></Link></div>
+            <div className="inspector-profile"><Avatar key={room.metadata?.anchor.avatar_url || room.live_id} room={room} /><h3>{roomName(room)}</h3><Link href={douyinRoomUrl(room)} target="_blank" rel="noreferrer">打开抖音直播间 <span aria-hidden="true">↗</span></Link></div>
             <p className="inspector-title">{room.metadata?.title || '等待获取直播标题'}</p>
             <div className="inspector-status"><Status room={room} /><span>{isStale(room) ? '开播状态待确认' : isLive(room) ? '正在直播' : '未开播'}</span></div>
             <div className="inspector-section"><h4>房间数据</h4><dl className="detail-stats"><div><dt>直播间号</dt><dd>{room.live_id}</dd></div><div><dt>累计进场</dt><dd>{number(room.stats.enter)}</dd></div><div><dt>累计点赞</dt><dd>{number(room.stats.like)}</dd></div><div><dt>上次观测在线</dt><dd>{number(room.stats.online)} 人</dd></div>{room.metadata?.anchor.follower_count != null && <div><dt>主播粉丝</dt><dd>{number(room.metadata.anchor.follower_count)}</dd></div>}</dl></div>
@@ -380,10 +380,10 @@ export default function Pipeline({ user, onAccount }: { user: StudioUser; onAcco
     </div></Dialog>
     <Dialog open={addOpen} onChange={value => { if (!busy) setAddOpen(value) }} title="添加直播间" footer={<><Button variant="secondary" isDisabled={busy} onPress={() => setAddOpen(false)}>取消</Button><Button isDisabled={busy || !roomInput.trim()} onPress={() => void addRooms()}><PlusOutlined />{busy ? '正在添加…' : '添加并开始监控'}</Button></>}>
       <div className="dialog-intro"><div className="dialog-symbol"><PlusOutlined /></div><p>将需要关注的直播间加入工作台。<br />支持批量添加，每行输入一个房间号或链接。</p></div>
-      <Label className="field-label" htmlFor="room-addresses">直播间地址</Label><TextArea id="room-addresses" rows={6} value={roomInput} onChange={event => setRoomInput(event.target.value)} placeholder={'输入房间号，例如 123456789\n或 https://live.douyin.com/123456789'} disabled={busy} />
+      <Label className="field-label" htmlFor="room-addresses">直播间地址</Label><TextArea id="room-addresses" rows={6} value={roomInput} onChange={event => setRoomInput(event.target.value)} placeholder={'输入房间号或抖音直播间链接\n例如 https://live.douyin.com/?anchor_id=123456789'} disabled={busy} />
       <div className="dialog-hint"><CheckCircleOutlined /><span>每次最多 50 间，已监控房间自动跳过，已暂停或删除的房间重新启动并沿用历史记录和配置。新房间使用独立游客身份，可在配置中添加 Cookie。</span></div>{addError && <InlineFeedback>{addError}</InlineFeedback>}
     </Dialog>
-    <Dialog open={settingsOpen && !!settingsRoom} onChange={setSettingsOpen} title={settingsRoom ? roomName(settingsRoom) + ' · 采集配置' : '采集配置'}>{settingsRoom && <><CookieSettings liveId={settingsRoom.live_id} onSaved={() => void load()} /><Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([settingsRoom], !settingsRoom.enabled)}>{settingsRoom.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{settingsRoom.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button><Button fullWidth className="room-control-button remove-monitor" variant="ghost" aria-label="删除此直播间" isDisabled={busy} onPress={() => confirmRemoval([settingsRoom])}><DeleteOutlined />删除此直播间</Button></>}</Dialog>
+    <Dialog open={settingsOpen && !!settingsRoom} onChange={setSettingsOpen} title={settingsRoom ? roomName(settingsRoom) + ' · 采集配置' : '采集配置'}>{settingsRoom && <><CookieSettings liveId={settingsRoom.live_id} roomUrl={douyinRoomUrl(settingsRoom)} onSaved={() => void load()} /><Button fullWidth className="room-control-button" variant="secondary" isDisabled={busy} onPress={() => void operate([settingsRoom], !settingsRoom.enabled)}>{settingsRoom.enabled ? <PauseOutlined /> : <PlayCircleOutlined />}{settingsRoom.enabled ? '暂停此房间监控' : '启动此房间监控'}</Button><Button fullWidth className="room-control-button remove-monitor" variant="ghost" aria-label="删除此直播间" isDisabled={busy} onPress={() => confirmRemoval([settingsRoom])}><DeleteOutlined />删除此直播间</Button></>}</Dialog>
     <Dialog open={removalTargets.length > 0} onChange={open => { if (!open && !busy) setRemovalTargets([]) }} title={removalTargets.length > 1 ? `删除 ${removalTargets.length} 个直播间` : '删除直播间'} footer={<><Button variant="secondary" isDisabled={busy} onPress={() => setRemovalTargets([])}>取消</Button><Button variant="danger" isDisabled={busy} onPress={() => void removeRooms()}>{busy ? '正在删除…' : '确认删除'}</Button></>}>
       <p className="dialog-description">删除后会停止采集，并从监控列表移除。历史记录和房间配置会保留，重新添加相同房间号可继续使用。</p>
       <ul className="removal-room-list">{removalTargets.map(item => <li key={item.live_id}><strong>{roomName(item)}</strong><span>{item.live_id}</span></li>)}</ul>

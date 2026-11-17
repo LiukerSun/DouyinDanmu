@@ -10,7 +10,7 @@ function load(relative) {
   return module.exports;
 }
 const { RoomStreams } = load('room-streams.ts');
-const { parseRoomInput, isLive, needsAttention } = load('monitor.ts');
+const { parseRoomInput, douyinRoomUrl, isLive, needsAttention } = load('monitor.ts');
 const { completeRoomOrder, reorderVisibleRooms } = load('room-order.ts');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const event = (id, seq, extra = {}) => ({ live_id: id, seq, event_id: 'event-' + seq, source: 'douyin', type: 'chat', user_name: 'test', user_id: '9007199254740993', content: '测试消息', timestamp: 1, gift_count: 0, persisted_at_ms: 2, received_at_ms: 1, ...extra });
@@ -34,6 +34,14 @@ async function main() {
   assert.deepEqual(reorderVisibleRooms(['a', 'b'], ['a', 'b'], 'missing', 'a'), ['a', 'b']);
   console.log('PASS: manual order survives new/deleted rooms and reordering preserves filtered-out slots');
   assert.deepEqual(parseRoomInput('123\nhttps://live.douyin.com/456?foo=1，123;live.douyin.com/789/'), { ids: ['123', '456', '789'], invalid: [] });
+  const anchorId = '9007199254740993';
+  const anchorUrl = `https://live.douyin.com/?anchor_id=${anchorId}`;
+  assert.deepEqual(parseRoomInput(`${anchorUrl}&extra=1\nlive.douyin.com?anchor_id=${anchorId},123`), { ids: [anchorId, '123'], invalid: [] });
+  assert.deepEqual(parseRoomInput(`https://live.douyin.com/123?anchor_id=${anchorId}`), { ids: ['123'], invalid: [] });
+  assert.equal(parseRoomInput(anchorUrl + '&anchor_id=456').invalid.length, 1);
+  assert.equal(parseRoomInput('https://live.douyin.com/?anchor_id=not-a-number').invalid.length, 1);
+  assert.equal(douyinRoomUrl({ live_id: anchorId, metadata: { anchor: { id: anchorId } } }), anchorUrl);
+  assert.equal(douyinRoomUrl({ live_id: '123', metadata: { anchor: { id: anchorId } } }), 'https://live.douyin.com/123');
   assert.equal(parseRoomInput('https://evil.example/live.douyin.com/123').invalid.length, 1);
   assert.equal(parseRoomInput('https://live.douyin.com.evil.example/123').invalid.length, 1);
   assert.equal(parseRoomInput('123oops').invalid.length, 1);

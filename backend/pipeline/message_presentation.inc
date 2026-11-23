@@ -25,6 +25,11 @@ static void sqlite_feed_visible(sqlite3_context* context,int,sqlite3_value** val
     } catch(...) { sqlite3_result_int(context,0); }
 }
 
+static void register_feed_visibility(sqlite3* db) {
+    if(sqlite3_create_function_v2(db,"feed_visible",1,SQLITE_UTF8|SQLITE_DETERMINISTIC,nullptr,sqlite_feed_visible,nullptr,nullptr,nullptr)!=SQLITE_OK)
+        throw std::runtime_error("Cannot register presentation policy");
+}
+
 // Header metrics and compact audience ranks cross the wire; complete protocol
 // payloads and other configuration messages remain in storage.
 static json projected_room_state(const json& event) {

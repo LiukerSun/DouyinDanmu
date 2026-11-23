@@ -14,9 +14,16 @@ async function runLauncher(health, options = {}) {
   const finished = new Promise(resolve => { finish = resolve; });
   const files = new Map(), messages = [], launches = [], kills = [];
   if (options.pending) files.set(path.join(options.env.DOUYIN_INSTALL_ROOT, '.updates', 'pending-version'), 'a'.repeat(32));
-  const server = () => Object.assign(new EventEmitter(), {
-    listen(...args) { args.at(-1)(); },
-    address() { return { port: ++nextPort }; },
+  const server = (web = false) => Object.assign(new EventEmitter(), {
+    listen(port, host, ready) {
+      if (web && options.blockedPort === port) {
+        queueMicrotask(() => this.emit('error', Object.assign(new Error('bind failed'), { code: options.bindError })));
+        return;
+      }
+      this.port = port || ++nextPort;
+      ready();
+    },
+    address() { return { port: this.port }; },
     close(callback) { callback?.(); },
     closeAllConnections() {},
   });
@@ -27,7 +34,7 @@ async function runLauncher(health, options = {}) {
     openSync: () => 1, closeSync() {},
   };
   const fakeProcess = {
-    argv: ['node', 'launcher.js', '--no-browser'], env: options.env || {}, platform: 'win32', pid: 1, execPath: 'node.exe',
+    argv: ['node', 'launcher.js', '--no-browser', ...(options.args || [])], env: options.env || {}, platform: 'win32', pid: 1, execPath: 'node.exe',
     on() {}, kill() {}, exit: code => finish({ exitCode: code }),
   };
   const spawn = (file, args) => {
@@ -44,8 +51,8 @@ async function runLauncher(health, options = {}) {
   let authOptions, installerOptions, serviceOptions;
   const modules = {
     'node:fs': fakeFs, 'node:path': path, 'node:net': { createServer: server },
-    'node:http': { createServer: server }, 'node:crypto': { randomBytes: () => Buffer.alloc(32) },
-    'node:child_process': { spawn }, '../auth/server': { createAuthServer: async options => { authOptions = options; return server(); } },
+    'node:http': { createServer: handler => server(!handler) }, 'node:crypto': { randomBytes: () => Buffer.alloc(32) },
+    'node:child_process': { spawn }, '../auth/server': { createAuthServer: async options => { authOptions = options; return options.server; } },
     '../auth/update-service': { createUpdateService: options => { serviceOptions = options; return { updateService: true }; } },
     './update-package': { createPortableInstaller: options => { installerOptions = options; return async () => {}; } },
   };
@@ -83,6 +90,12 @@ test('an unavailable backend still times out', async () => {
   assert.ok(result.kills[0].at >= 15000 && result.kills[0].at <= 16000);
 });
 
+test('a large archive can finish indexing before collection starts', async () => {
+  const result = await runLauncher(elapsed => elapsed < 60000 ? 'indexing' : 'ok');
+  assert.equal(result.started, true);
+  assert.ok(result.launches.find(child => child.name === 'collector').at >= 60000);
+});
+
 test('maintenance does not disable the timeout after the backend stops responding', async () => {
   const result = await runLauncher(elapsed => elapsed < 30000 ? 'maintenance' : new Error('ECONNREFUSED'));
   assert.equal(result.exitCode, 1);
@@ -102,6 +115,24 @@ test('the existing ok health response starts collection immediately', async () =
   assert.equal(result.launches.find(child => child.name === 'collector').at, 0);
   assert.deepEqual(result.kills, []);
 });
+
+for (const bindError of ['EACCES', 'EADDRINUSE']) {
+  test(`an unavailable default port (${bindError}) selects a usable workbench origin`, async () => {
+    const result = await runLauncher(() => 'ok', { blockedPort: 3000, bindError });
+    assert.equal(result.started, true);
+    const [origin, alias] = result.authOptions.origins;
+    assert.notEqual(origin, 'http://localhost:3000');
+    assert.equal(alias, origin.replace('localhost', '127.0.0.1'));
+    assert.ok(result.messages.some(message => message.includes(origin)));
+  });
+
+  test(`an explicit unavailable port (${bindError}) fails before collection`, async () => {
+    const result = await runLauncher(() => 'ok', { blockedPort: 3000, bindError, args: ['--port', '3000'] });
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(result.launches, []);
+    assert.ok(result.messages.some(message => message.includes('3000')));
+  });
+}
 
 test('an activated version uses new program files and the original user data root', async () => {
   const installRoot = path.resolve('fixture-install');

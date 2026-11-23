@@ -15,7 +15,8 @@ const data = path.join(root, 'data'), runtime = path.join(data, '.runtime');
 const stateFile = path.join(runtime, 'instance.json');
 const args = process.argv.slice(2);
 const option = name => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
-const port = Number(option('--port') || 3000);
+const explicitPort = args.includes('--port');
+const requestedPort = explicitPort ? Number(option('--port')) : 3000;
 const debug = args.includes('--debug');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function freePort() {
@@ -31,7 +32,7 @@ async function stopExisting() {
   console.log('已请求停止，账号和采集数据保留。');
 }
 async function start() {
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('--port 需要是 1024–65535 的端口号');
+  if (!Number.isInteger(requestedPort) || requestedPort < 1024 || requestedPort > 65535) throw new Error('--port 需要是 1024–65535 的端口号');
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--port') { i++; continue; }
     if (!['--debug', '--no-browser'].includes(args[i])) throw new Error('未知参数：' + args[i]);
@@ -44,7 +45,7 @@ async function start() {
     fs.unlinkSync(stateFile);
   }
   const controlToken = crypto.randomBytes(32).toString('hex');
-  const record = { pid: process.pid, controlToken, controlPort: null, port, debug };
+  const record = { pid: process.pid, controlToken, controlPort: null, port: requestedPort, debug };
   fs.writeFileSync(stateFile, JSON.stringify(record), { flag: 'wx', mode: 0o600 });
   const children = []; let web, control, ending = false, failed = false;
   const shutdown = async code => {
@@ -67,14 +68,33 @@ async function start() {
     if (process.env.DOUYIN_UPDATE_PROTOCOL === '1' && fs.existsSync(path.join(root, '.updates', 'pending-version'))) {
       await shutdown(75);return;
     }
+    // Bind the actual HTTP listener before deriving trusted origins and allocating child ports.
+    web = http.createServer();
+    const starting = (_req, res) => { res.writeHead(503, { 'Retry-After': '1' }); res.end(); };
+    web.on('request', starting);
+    const listen = port => new Promise((resolve, reject) => {
+      const failed = error => { web.off('listening', ready); reject(error); };
+      const ready = () => { web.off('error', failed); resolve(); };
+      web.once('error', failed);
+      web.listen(port, '127.0.0.1', ready);
+    });
+    try { await listen(requestedPort); }
+    catch (error) {
+      if (!['EACCES', 'EADDRINUSE'].includes(error.code)) throw error;
+      if (explicitPort) throw new Error(`端口 ${requestedPort} 不可用（${error.code}），请更换 --port 或省略它以自动选择。`);
+      await listen(0);
+    }
+    const port = web.address().port;
+    if (port !== requestedPort) console.log(`默认端口 ${requestedPort} 不可用，已改用 ${port}。`);
+    record.port = port;
     const backendPort = await freePort(), wsPort = await freePort(), settingsPort = await freePort();
     const origins = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
     const currentVersion = fs.readFileSync(path.join(appRoot, 'VERSION'), 'utf8').trim();
     const installRelease = process.platform === 'win32' && process.env.DOUYIN_UPDATE_PROTOCOL === '1'
       ? createPortableInstaller({ installRoot: root, appRoot, currentVersion, onReady: () => { setTimeout(() => void shutdown(75), 500); } }) : null;
     const updateService = createUpdateService({ currentVersion, installRelease });
-    web = await createAuthServer({ dataDir: path.join(data, 'auth'), origins, wsHost: '127.0.0.1', wsPort, backendPort, settingsPort, webRoot: path.join(appRoot, 'web'), updateService });
-    await new Promise((resolve, reject) => { web.once('error', reject); web.listen(port, '127.0.0.1', resolve); });
+    await createAuthServer({ server: web, dataDir: path.join(data, 'auth'), origins, wsHost: '127.0.0.1', wsPort, backendPort, settingsPort, webRoot: path.join(appRoot, 'web'), updateService });
+    web.off('request', starting);
     control = http.createServer((req, res) => {
       if (req.headers['x-control-token'] !== controlToken) { res.writeHead(403); res.end(); return; }
       if (req.method !== 'POST' || req.url !== '/stop') { res.writeHead(404); res.end(); return; }
@@ -105,13 +125,13 @@ async function start() {
         if (response.ok) {
           const health = await response.json();
           healthy = health.status === 'ok';
-          if (health.status === 'maintenance') {
-            // A responsive VACUUM may take minutes. Keep waiting only while
+          if (health.status === 'maintenance' || health.status === 'indexing') {
+            // A responsive VACUUM or first archive index build may take minutes. Keep waiting only while
             // the backend confirms it is alive and doing startup maintenance.
             deadline = Date.now() + 15000;
             pause = 1000;
             if (!maintenanceNotice) {
-              console.log('正在整理数据库，完成后将自动启动采集，请保持程序运行。');
+              console.log(health.status === 'indexing' ? '正在建立历史消息索引，完成后自动启动采集。' : '正在整理数据库，完成后将自动启动采集，请保持程序运行。');
               maintenanceNotice = true;
             }
           }
@@ -125,6 +145,6 @@ async function start() {
     console.log(debug ? 'Debug 模式：协议诊断已开启。' : '普通模式：协议诊断已隐藏。');
     console.log('首次访问创建管理员账号。停止请按 Ctrl+C 或运行 stop.cmd。');
     if (!args.includes('--no-browser')) spawn('rundll32.exe', ['url.dll,FileProtocolHandler', `http://localhost:${port}`], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
-  } catch (error) { console.error(error.code === 'EADDRINUSE' ? `端口 ${port} 已占用，可运行 start.cmd --port 3001` : error.message); await shutdown(1); }
+  } catch (error) { console.error(error.message); await shutdown(1); }
 }
 (args.includes('--stop') ? stopExisting() : start()).catch(error => { console.error(error.message); process.exitCode = 1; });

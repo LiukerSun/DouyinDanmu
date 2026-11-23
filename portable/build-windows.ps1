@@ -79,7 +79,17 @@ try {
   $manifest = Get-ChildItem -LiteralPath $output -File -Recurse | ForEach-Object { [ordered]@{ path = $_.FullName.Substring($output.Length+1).Replace('\','/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }
   [IO.File]::WriteAllText((Join-Path $output 'manifest.json'), ($manifest | ConvertTo-Json -Depth 3), [Text.UTF8Encoding]::new($false))
   $releaseArchive = "$output.zip"
-  Compress-Archive -LiteralPath $output -DestinationPath $releaseArchive -CompressionLevel Optimal
+  # The updater requires ZIP entry names with forward slashes, including on Windows PowerShell 5.1.
+  Add-Type -AssemblyName System.IO.Compression
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [IO.Compression.ZipFile]::Open($releaseArchive, [IO.Compression.ZipArchiveMode]::Create)
+  try {
+    $packageName = Split-Path -Leaf $output
+    foreach ($relative in (@($manifest.path) + 'manifest.json')) {
+      $file = Join-Path $output $relative
+      [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file, "$packageName/$relative", [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+  } finally { $zip.Dispose() }
   (Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash | Set-Content -LiteralPath "$releaseArchive.sha256"
   Write-Host "Portable release v${appVersion}: $releaseArchive"
 } finally { $env:PATH = $previousPath }

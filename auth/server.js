@@ -11,7 +11,7 @@ const SCRYPT = { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 };
 const publicUser = user => ({ username: user.username, displayName: user.displayName, role: '管理员' });
 const digest = token => crypto.createHash('sha256').update(token).digest('hex');
 
-async function createAuthServer({ dataDir, origins = ['http://localhost:3000', 'http://127.0.0.1:3000'], now = Date.now, sessionMs = SESSION_MS, wsHost = 'backend', wsPort = 8081, webRoot, backendPort, settingsPort, updateService } = {}) {
+async function createAuthServer({ server = http.createServer(), dataDir, origins = ['http://localhost:3000', 'http://127.0.0.1:3000'], now = Date.now, sessionMs = SESSION_MS, wsHost = 'backend', wsPort = 8081, webRoot, backendPort, settingsPort, updateService } = {}) {
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
   const updates = updateService || createUpdateService({ currentVersion: await readCurrentVersion(), now });
   const accountFile = path.join(dataDir, 'account.json');
@@ -56,7 +56,7 @@ async function createAuthServer({ dataDir, origins = ['http://localhost:3000', '
     for (const [key, entry] of attempts) if (entry.until <= now()) attempts.delete(key);
   }, 1000);
   clean.unref();
-  const server = http.createServer(async (req, res) => {
+  server.on('request', async (req, res) => {
     try {
       if (req.url === '/health/live') return send(res, 200, { ok: true });
       if (!hosts.has(req.headers.host) || req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: '请从工作台地址访问' });

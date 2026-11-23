@@ -54,12 +54,12 @@
 
 ## Windows 便携版
 
-[下载 v2.7.0 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.0/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.0/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.7.0)
+[下载 v2.7.1 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.1/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.1/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.7.1)
 
 系统要求：**Windows 10（1903 或更新版本）/ Windows 11，x64**。运行环境已包含在发布包中，无需安装 Docker、Node.js、数据库或编译器。
 
 1. 将 ZIP 完整解压到有写入权限的目录。
-2. 双击 `start.cmd`，浏览器会打开 [本地工作台](http://localhost:3000)。
+2. 双击 `start.cmd`，浏览器会打开 [本地工作台](http://localhost:3000)。如果默认端口 `3000` 不可用，启动器会自动选择可用端口，并在窗口中显示实际地址。
 3. 首次访问创建管理员账号，然后添加直播间号或直播链接。
 
 登录后会自动检查 GitHub 的最新正式 Release，也可以在版本号旁手动检查。发现新版后可前往 GitHub；支持一键更新的便携版还可选择“下载并重启更新”。下载和校验在后台完成，切换版本时短暂停止采集，重新启动后需重新登录。

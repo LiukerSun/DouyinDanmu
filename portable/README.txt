@@ -22,7 +22,7 @@
   start.cmd                  普通模式，协议诊断隐藏
   start-debug.cmd            debug 模式，显示协议诊断
   stop.cmd                   停止当前目录的程序，保留所有数据
-  start.cmd --port 3001      3000 端口已占用时使用其他端口
+  start.cmd --port 3001      固定使用指定端口。普通启动遇到 3000 不可用时会自动选择可用端口。
   start.cmd --no-browser     启动服务，但不自动打开浏览器
 
 也可以在启动窗口按 Ctrl+C 停止。关闭启动窗口会结束本程序的子进程。

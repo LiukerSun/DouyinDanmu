@@ -36,6 +36,7 @@ namespace beast = boost::beast;
 namespace websocket = beast::websocket;
 using tcp = net::ip::tcp;
 static std::atomic<bool> running{true}, mq_ready{false}, vacuum_requested{false}, vacuum_running{false}, startup_ready{false};
+static std::atomic<bool> indexing_archive{false};
 static int64_t now_ms() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(); }
 static std::string env(const char* key, const char* fallback) { const char* v = std::getenv(key); return v ? v : fallback; }
 #include "sha256.inc"
@@ -117,12 +118,11 @@ class Store {
     #include "analytics_store.inc"
     #include "session_store.inc"
 public:
-    Store() {
+    explicit Store(bool defer_archive_index=false) {
         database_path = env("DATABASE_PATH", "/data/pipeline.db"); std::filesystem::create_directories(std::filesystem::path(database_path).parent_path());
         if (sqlite3_open(database_path.c_str(), &db) != SQLITE_OK) throw std::runtime_error("Cannot open database");
         sqlite3_busy_timeout(db, 3000);
-        if(sqlite3_create_function_v2(db,"feed_visible",1,SQLITE_UTF8|SQLITE_DETERMINISTIC,nullptr,sqlite_feed_visible,nullptr,nullptr,nullptr)!=SQLITE_OK)
-            throw std::runtime_error("Cannot register presentation policy");
+        register_feed_visibility(db);
         register_body_codecs(db);
         exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
         exec(R"SQL(
@@ -169,6 +169,7 @@ public:
         analytics_initialize();
         sessions_initialize();
         compression_initialize();
+        if(!defer_archive_index)initialize_archive_index();
     }
     ~Store() { sqlite3_close(db); }
     json rooms() {
@@ -219,6 +220,7 @@ public:
         }
         std::reverse(list.begin(),list.end());return {{"events",list},{"state_events",latest},{"through_seq",std::to_string(high)},{"stats",stats_unlocked(live)}};
     }
+    #include "archive_index.inc"
     #include "message_search_store.inc"
     json events(const std::string& live, int64_t after, int limit=200) { std::lock_guard<std::mutex> guard(mutex); return events_unlocked(live,after,limit); }
     json frontend_batch(const std::string& live,int64_t after,int limit=200) {
@@ -425,6 +427,8 @@ public:
                 save_presentation_unlocked(e,presentation);
                 Statement view(db,"INSERT INTO message_views(live_id,display_id,last_seq,body) VALUES(?,?,?,?) ON CONFLICT(live_id,display_id) DO UPDATE SET last_seq=excluded.last_seq,body=excluded.body");
                 view.text(1,frame.live_id()).text(2,display_id).num(3,seq).text(4,presentation.dump()).row();
+                Statement visibility(db,"UPDATE message_archive SET visible=CASE merged WHEN 0 THEN ? ELSE ? END WHERE merged IN (0,1) AND seq=?");
+                visibility.num(1,feed_visible(e)).num(2,feed_visible(presentation)).num(3,seq).row();
                 if(gift_delta>0) {
                     Statement quantity(db,"INSERT INTO gift_totals(live_id,quantity) VALUES(?,?) ON CONFLICT(live_id) DO UPDATE SET quantity=gift_totals.quantity+excluded.quantity");
                     quantity.text(1,frame.live_id()).num(2,gift_delta).row();
@@ -478,6 +482,7 @@ static void maintenance_loop(Store& store) {
     const auto pause=setting("COMPRESSION_BATCH_PAUSE_MS",50,0,60000);
     while(running) {
         try {
+            store.refresh_archive_index(200);
             if(compression_enabled() && store.compress_batch(rows)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(pause));
                 continue;
@@ -649,7 +654,7 @@ int main(int argc, char** argv) {
             if(options.command=="--repair-gift-groups"){const auto report=repair_gift_groups(options.apply);std::cout<<report.dump(2)<<std::endl;return report["failed"].get<int>()?2:0;}
             return replay_quarantine(options.apply);
         }
-        Store store; Cache cache; httplib::Server http;
+        Store store(true); Cache cache; httplib::Server http;
         http.new_task_queue=[] { return new httplib::ThreadPool(4); };
         http.set_payload_max_length(9*1024*1024); http.set_read_timeout(5); http.set_write_timeout(5);
         http.set_exception_handler([](const httplib::Request&,httplib::Response& res,std::exception_ptr){res.status=500;res.set_content("{\"error\":\"Request failed\"}","application/json");});
@@ -662,7 +667,7 @@ int main(int argc, char** argv) {
             return httplib::Server::HandlerResponse::Unhandled;
         });
         auto internal=[&](const httplib::Request& req,httplib::Response& res){if(req.get_header_value("X-Internal-Token")!=env("INTERNAL_TOKEN","local-collector-token")){res.status=401;return false;}return true;};
-        http.Get("/health/live",[&](const httplib::Request&,httplib::Response& res){send(res,{{"status",startup_ready.load()?"ok":vacuum_running.load()?"maintenance":"starting"}});});
+        http.Get("/health/live",[&](const httplib::Request&,httplib::Response& res){send(res,{{"status",startup_ready.load()?"ok":indexing_archive.load()?"indexing":vacuum_running.load()?"maintenance":"starting"}});});
         http.Get("/api/health",[&](const httplib::Request&,httplib::Response& res){auto o=store.overview();o["redis"]=cache.healthy();o["debug_mode"]=options.debug;o["version"]=PIPELINE_VERSION;
 #ifdef PIPELINE_PORTABLE
             o["transport"]="local";o["cache_backend"]="sqlite";o["pipeline"]="Local spool → C++ Protobuf → SQLite → C++ WebSocket";
@@ -737,6 +742,11 @@ int main(int argc, char** argv) {
         signals.async_wait([&](beast::error_code,int){running=false;http.stop();io.stop();});
         if(!http.bind_to_port(env("BIND_HOST","0.0.0.0"),std::stoi(env("HTTP_PORT","8080"))))throw std::runtime_error("HTTP port unavailable");
         std::thread api([&]{http.listen_after_bind();});
+        try {
+            indexing_archive=true;
+            store.initialize_archive_index();
+            indexing_archive=false;
+        } catch(...) { http.stop(); api.join(); throw; }
         try { store.startup_vacuum_if_pending(); }
         catch(const std::exception& error) { std::cerr<<"[maintenance] Startup compaction postponed: "<<error.what()<<std::endl; }
         startup_ready=true;

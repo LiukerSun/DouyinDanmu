@@ -8,6 +8,76 @@ const createRoomInfoClient = ({ cookieSource = createCookieSource({ readFile: ()
 
 const LIVE_ID = '100000000001', ROOM_ID = '7000000000000000001', USER_ID = '9000000000000000001';
 const checkedAt = 1700000000123;
+
+test('failed lookups report safe evidence from every stage and throttle retries per room', async () => {
+  let clock = checkedAt, recover = false;
+  const reports = [];
+  const secret = 'private-diagnostic-canary';
+  const html = '<title>验证 ' + secret + '</title><script>void 0</script>';
+  const client = createRoomInfoClient({
+    now: () => clock, onDiagnostic: record => reports.push(record),
+    cookieSource: createCookieSource({ readFile: () => 'ttwid=' + secret }),
+    fetchImpl: async url => {
+      if (url.includes('/webcast/')) {
+        if (recover) return response(api({ id_str: ROOM_ID, status: 2 }));
+        return new Response(JSON.stringify({ status_code: 8, message: secret }), {
+          headers: { 'Content-Type': 'application/json; detail=' + secret },
+        });
+      }
+      if (url.includes('/profile/')) return new Response(secret, { headers: { 'Content-Type': 'example/' + secret } });
+      return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+    },
+  });
+  await assert.rejects(client(LIVE_ID), /可验证资料/);
+  assert.equal(reports[0].time, new Date(clock).toISOString());
+  assert.equal(reports[0].liveId, LIVE_ID);
+  const [room, page, profile] = reports[0].steps;
+  assert.deepEqual(room, { stage: 'room_api', http: 200, contentType: 'application/json',
+    bodyBytes: Buffer.byteLength(JSON.stringify({ status_code: 8, message: secret })), bodyShape: 'json_like',
+    apiStatus: 8, roomCount: null, elapsedMs: 0, result: 'invalid_metadata' });
+  assert.deepEqual(page, { stage: 'room_page', http: 200, contentType: 'text/html', bodyShape: 'markup_like',
+    scripts: 1, recognizedScripts: 0, documents: 0, titleHint: 'verification', bodyBytes: Buffer.byteLength(html),
+    elapsedMs: 0, result: 'invalid_metadata' });
+  assert.equal(profile.stage, 'anchor_profile');
+  assert.equal(profile.contentType, 'other');
+  assert.equal(profile.result, 'invalid_json');
+  assert.ok(!JSON.stringify(reports).includes(secret));
+  await assert.rejects(client(LIVE_ID));
+  await assert.rejects(client('222'));
+  assert.equal(reports.length, 2);
+  clock += 60000;
+  await assert.rejects(client(LIVE_ID));
+  assert.equal(reports[2].suppressed, 1);
+  recover = true;
+  assert.equal((await client(LIVE_ID)).metadata.live_status, 'live');
+  assert.equal(reports.length, 3);
+  recover = false;
+  await assert.rejects(client(LIVE_ID));
+  assert.equal(reports[3].suppressed, 0);
+});
+
+test('visitor bootstrap records transport codes and HTTP failures without error text or headers', async () => {
+  const reports = [];
+  let calls = 0;
+  const client = createRoomInfoClient({
+    onDiagnostic: record => reports.push(record),
+    fetchImpl: async () => {
+      if (++calls === 1) throw Object.assign(new Error('private-diagnostic-canary'), { cause: { code: 'ECONNRESET' } });
+      return new Response('private-diagnostic-canary', { status: 444, headers: { 'Set-Cookie': 'ttwid=private-diagnostic-canary' } });
+    },
+  });
+  await assert.rejects(client(LIVE_ID), /请求失败或超时/);
+  client.clearCookieCache(LIVE_ID);
+  await assert.rejects(client(LIVE_ID), /HTTP 444/);
+  const [network, http] = reports.map(record => record.steps[0]);
+  assert.equal(network.stage, 'visitor_home');
+  assert.equal(network.result, 'network_error');
+  assert.equal(network.networkCode, 'ECONNRESET');
+  assert.equal(http.stage, 'visitor_home');
+  assert.equal(http.result, 'http_error');
+  assert.equal(http.http, 444);
+  assert.ok(!JSON.stringify(reports).includes('private-diagnostic-canary'));
+});
 // Synthetic SSR room metadata fixtures.
 const offline = {
   room: { id_str: ROOM_ID, status: 4, status_str: '4', title: '测试直播间 A' },

@@ -66,8 +66,10 @@ function normalize(info, checkedAt, allowMissingRoomId = false) {
   };
 }
 
-function parseAnchorProfile(body, anchorId, checkedAt) {
+function parseAnchorProfile(body, anchorId, checkedAt, step = {}) {
   const { status_code, user } = parseLosslessJson(body);
+  step.apiStatus = Number.isSafeInteger(status_code) ? status_code : null;
+  step.anchorMatches = idValue(user?.uid) === anchorId;
   if (status_code !== 0 || idValue(user?.uid) !== anchorId) return null;
 
   const status = String(user.live_status);
@@ -91,13 +93,16 @@ function parseAnchorProfile(body, anchorId, checkedAt) {
   return { metadata, webRid: roomAddressId.test(webRid) && webRid !== anchorId ? webRid : '' };
 }
 
-function parseRoomApi(body, liveId, checkedAt = Date.now()) {
+function parseRoomApi(body, liveId, checkedAt = Date.now(), step = {}) {
   const payload = parseLosslessJson(body);
+  step.apiStatus = Number.isSafeInteger(payload?.status_code) ? payload.status_code : null;
+  step.roomCount = Array.isArray(payload?.data?.data) ? payload.data.data.length : null;
   if (payload.status_code !== 0) throw new Error('抖音房间接口未返回成功状态');
   const entries = payload.data?.data;
   if (!Array.isArray(entries) || entries.length !== 1) throw new Error('抖音房间接口未返回唯一房间');
   const room = entries[0];
   const returnedId = textValue(room.web_rid) || textValue(payload.data.web_rid);
+  step.roomMatches = returnedId ? returnedId === liveId : null;
   if (returnedId && returnedId !== liveId) throw new Error('抖音房间接口返回的直播间不匹配');
   return normalize({ room, anchor: room.owner || payload.data.user }, checkedAt);
 }
@@ -146,23 +151,34 @@ function flightDocuments(flight) {
   return documents;
 }
 
-function parseRoomPage(html, liveId, checkedAt = Date.now()) {
+function parseRoomPage(html, liveId, checkedAt = Date.now(), step = {}) {
+  const title = html.match(/<title\b[^>]*>([^<]{0,300})<\/title\s*>/i)?.[1];
+  if (!title) step.titleHint = 'missing';
+  else if (/验证|captcha|verification/i.test(title)) step.titleHint = 'verification';
+  else if (/登录|登錄|log\s?in|sign\s?in/i.test(title)) step.titleHint = 'login';
+  else step.titleHint = 'other';
+  step.scripts = 0;
+  step.recognizedScripts = 0;
   let flight = '';
   const documents = [];
   for (const script of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    step.scripts++;
     // These arguments are JSON data. Never evaluate JavaScript downloaded from Douyin.
     const push = script[2].match(/^\s*self\.__pace_f\.push\(([\s\S]*)\);?\s*$/);
     if (push) {
+      step.recognizedScripts++;
       try {
         const chunk = parseLosslessJson(push[1]);
         if (chunk[0] === 1 && typeof chunk[1] === 'string') flight += chunk[1];
       } catch {}
     } else if (/\bid\s*=\s*["'](?:RENDER_DATA|__NEXT_DATA__)["']/i.test(script[1])) {
+      step.recognizedScripts++;
       try { documents.push(parseLosslessJson(script[2].trim().startsWith('%') ? decodeURIComponent(script[2]) : script[2])); } catch {}
     }
   }
   // Flight records can be split across script tags. Join the payloads before parsing.
   documents.push(...flightDocuments(flight));
+  step.documents = documents.length;
   // Later SSR records contain the resolved room rather than the initial empty store.
   for (const document of documents.reverse()) {
     const info = findRoomInfo(document, liveId);
@@ -171,27 +187,71 @@ function parseRoomPage(html, liveId, checkedAt = Date.now()) {
   throw new Error('抖音页面未返回该直播间的可验证资料');
 }
 
-function createRoomInfoClient({ fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 10000, cookieTtlMs = 20 * 60 * 1000, roomCookies = defaultRoomCookies } = {}) {
+const knownMimeTypes = new Set(['application/json', 'text/html', 'text/plain', 'application/octet-stream', 'application/xhtml+xml', 'text/javascript']);
+const networkCodes = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
+  'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_SOCKET',
+  'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']);
+
+function createRoomInfoClient({
+  fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 10000, cookieTtlMs = 20 * 60 * 1000,
+  roomCookies = defaultRoomCookies, onDiagnostic = record => console.error('[room-diagnostic]', JSON.stringify(record)),
+} = {}) {
   const cookieCaches = new Map();
-  async function request(url, cookie = '') {
+  const lastReports = new Map();
+  async function request(url, cookie, step) {
+    const signal = AbortSignal.timeout(timeoutMs);
     let response;
     try {
       response = await fetchImpl(url, {
         headers: { 'User-Agent': UA, Referer: ORIGIN + '/', ...(cookie ? { Cookie: cookie } : {}) },
-        signal: AbortSignal.timeout(timeoutMs), redirect: 'error',
+        signal, redirect: 'error',
       });
-    } catch { throw new Error('抖音房间资料请求失败或超时'); }
+    } catch (error) {
+      const code = error?.cause?.code ?? error?.code;
+      step.result = signal.aborted ? 'timeout' : 'network_error';
+      if (networkCodes.has(code)) step.networkCode = code;
+      throw new Error('抖音房间资料请求失败或超时');
+    }
+    step.http = response.status;
+    const mime = response.headers?.get('content-type')?.split(';')[0].trim().toLowerCase();
+    step.contentType = mime ? (knownMimeTypes.has(mime) ? mime : 'other') : 'missing';
     if (!response.ok) {
+      step.result = 'http_error';
       await response.body?.cancel().catch(() => {});
       throw new Error(`抖音房间资料请求返回 HTTP ${response.status}`);
     }
     let body;
     try { body = await response.text(); }
-    catch { throw new Error('抖音房间资料响应读取失败或超时'); }
-    if (!body || body.length > 8 * 1024 * 1024) throw new Error('抖音房间资料响应为空或超限');
+    catch {
+      step.result = signal.aborted ? 'timeout' : 'read_error';
+      throw new Error('抖音房间资料响应读取失败或超时');
+    }
+    step.bodyBytes = Buffer.byteLength(body);
+    const firstChar = body.trimStart()[0];
+    if (firstChar === '{' || firstChar === '[') step.bodyShape = 'json_like';
+    else if (firstChar === '<') step.bodyShape = 'markup_like';
+    else step.bodyShape = firstChar ? 'other' : 'empty';
+    if (!body || body.length > 8 * 1024 * 1024) {
+      step.result = body ? 'body_too_large' : 'empty_body';
+      throw new Error('抖音房间资料响应为空或超限');
+    }
     return { body, response };
   }
-  async function getCookie(liveId) {
+  async function readStage(step, url, cookie, parse) {
+    const started = now();
+    try {
+      const { body, response } = await request(url, cookie, step);
+      const result = parse(body, response);
+      step.result = result == null ? 'no_match' : 'ok';
+      return result;
+    } catch (error) {
+      step.result ??= error instanceof SyntaxError ? 'invalid_json' : 'invalid_metadata';
+      throw error;
+    } finally {
+      step.elapsedMs = Math.max(0, now() - started);
+    }
+  }
+  async function getCookie(liveId, steps) {
     const configured = roomCookies.forRoom(liveId).read();
     if (hasTtwid(configured)) return configured;
     // A replacement/removed file must not retain the prior account's cookies.
@@ -202,50 +262,57 @@ function createRoomInfoClient({ fetchImpl = globalThis.fetch, now = Date.now, ti
     }
     if (cache.cookie && now() < cache.expires) return cache.cookie;
     if (!cache.pending) {
-      cache.pending = (async () => {
-        const { response } = await request(ORIGIN + '/', configured);
+      cache.step = { stage: 'visitor_home' };
+      cache.pending = readStage(cache.step, ORIGIN + '/', configured, (_body, response) => {
         const setCookie = response.headers.getSetCookie().find(value => value.startsWith('ttwid='));
         const cookie = setCookie?.split(';')[0];
-        if (!cookie || cookie === 'ttwid=') throw new Error('抖音未返回直播访问凭据，请稍后重试');
+        if (!cookie || cookie === 'ttwid=') {
+          cache.step.result = 'visitor_cookie_missing';
+          throw new Error('抖音未返回直播访问凭据，请稍后重试');
+        }
         cache.cookie = mergeCookieHeaders(cookie, configured); cache.expires = now() + cookieTtlMs;
         return cache.cookie;
-      })().finally(() => { cache.pending = undefined; });
+      }).finally(() => { cache.pending = undefined; });
     }
+    steps.push(cache.step);
     return cache.pending;
   }
-  async function fetchByWebRid(liveId, cookie) {
+  async function fetchByWebRid(liveId, cookie, steps) {
     const params = new URLSearchParams({ aid: '6383', app_name: 'douyin_web', live_id: '1', device_platform: 'web', web_rid: liveId, enter_from: 'web_live', cookie_enabled: 'true' });
+    const api = { stage: 'room_api' };
+    steps.push(api);
     try {
-      const { body } = await request(ORIGIN + '/webcast/room/web/enter/?' + params, cookie);
-      return parseRoomApi(body, liveId, now());
+      return await readStage(api, ORIGIN + '/webcast/room/web/enter/?' + params, cookie,
+        body => parseRoomApi(body, liveId, now(), api));
     } catch {
-      const { body } = await request(ORIGIN + '/' + liveId, cookie);
-      return parseRoomPage(body, liveId, now());
+      const page = { stage: 'room_page' };
+      steps.push(page);
+      return readStage(page, ORIGIN + '/' + liveId, cookie, body => parseRoomPage(body, liveId, now(), page));
     }
   }
-  async function fetchRoomInfo(liveId) {
-    if (typeof liveId !== 'string' || !roomAddressId.test(liveId)) throw new Error('直播间 ID 必须为数字字符串');
-    const cookie = await getCookie(liveId);
+  async function lookup(liveId, steps) {
+    const cookie = await getCookie(liveId, steps);
     let metadata;
     try {
-      metadata = await fetchByWebRid(liveId, cookie);
+      metadata = await fetchByWebRid(liveId, cookie, steps);
     } catch (roomError) {
       // An anchor_id link can also be stored as a numeric monitoring ID.
       const params = new URLSearchParams({ aid: '6383', user_id: liveId });
-      let body;
-      try { ({ body } = await request(ORIGIN + '/aweme/v1/web/user/profile/other/?' + params, cookie)); }
-      catch { throw roomError; }
+      const step = { stage: 'anchor_profile' };
+      steps.push(step);
       let profile;
-      try { profile = parseAnchorProfile(body, liveId, now()); }
-      catch (error) {
-        if (error instanceof SyntaxError) throw roomError;
+      try {
+        profile = await readStage(step, ORIGIN + '/aweme/v1/web/user/profile/other/?' + params, cookie,
+          body => parseAnchorProfile(body, liveId, now(), step));
+      } catch (error) {
+        if (step.result !== 'invalid_metadata') throw roomError;
         throw new Error(error.message + '（原直播间查询失败：' + roomError.message + '）', { cause: roomError });
       }
       if (!profile) throw roomError;
       metadata = profile.metadata;
       if (profile.webRid) {
         try {
-          const details = await fetchByWebRid(profile.webRid, cookie);
+          const details = await fetchByWebRid(profile.webRid, cookie, steps);
           if (details.room_id === metadata.room_id && details.anchor.id === liveId && details.live_status === 'live') {
             metadata = details;
           }
@@ -254,7 +321,30 @@ function createRoomInfoClient({ fetchImpl = globalThis.fetch, now = Date.now, ti
     }
     return { roomId: metadata.room_id, cookie, metadata };
   }
-  fetchRoomInfo.clearCookieCache = liveId => cookieCaches.delete(liveId);
+  async function fetchRoomInfo(liveId) {
+    if (typeof liveId !== 'string' || !roomAddressId.test(liveId)) throw new Error('直播间 ID 必须为数字字符串');
+    const steps = [];
+    try {
+      const room = await lookup(liveId, steps);
+      lastReports.delete(liveId);
+      return room;
+    } catch (error) {
+      const time = now();
+      const previous = lastReports.get(liveId);
+      if (!previous || time - previous.time >= 60000) {
+        if (!steps.length) steps.push({ stage: 'local_credentials', result: 'read_error' });
+        onDiagnostic({ time: new Date(time).toISOString(), liveId, suppressed: previous?.suppressed ?? 0, steps });
+        lastReports.set(liveId, { time, suppressed: 0 });
+      } else {
+        previous.suppressed++;
+      }
+      throw error;
+    }
+  }
+  fetchRoomInfo.clearCookieCache = liveId => {
+    lastReports.delete(liveId);
+    cookieCaches.delete(liveId);
+  };
   return fetchRoomInfo;
 }
 

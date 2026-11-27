@@ -47,13 +47,20 @@ async function start() {
   const controlToken = crypto.randomBytes(32).toString('hex');
   const record = { pid: process.pid, controlToken, controlPort: null, port: requestedPort, debug };
   fs.writeFileSync(stateFile, JSON.stringify(record), { flag: 'wx', mode: 0o600 });
-  const children = []; let web, control, ending = false, failed = false;
+  const children = []; let web, control, statusWindow, ending = false, failed = false;
   const shutdown = async code => {
     if (ending) return; ending = true; process.exitCode = code;
+    // Let Windows remove the tray icon before the native host closes its job.
+    let windowClosed;
+    if (statusWindow && statusWindow.exitCode === null && statusWindow.stdin) {
+      windowClosed = new Promise(resolve => statusWindow.once('close', resolve));
+      statusWindow.stdin.end();
+    }
     web?.close(); web?.closeAllConnections(); control?.close();
     for (const child of children) if (child.exitCode === null) child.kill();
     await Promise.race([Promise.all(children.map(child => child.exitCode !== null ? Promise.resolve() : new Promise(resolve => child.once('exit', resolve)))), sleep(5000)]);
     for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
+    if (windowClosed) await Promise.race([windowClosed, sleep(1500)]);
     try { if (JSON.parse(fs.readFileSync(stateFile, 'utf8')).controlToken === controlToken) fs.unlinkSync(stateFile); } catch {}
     console.log(code === 75 ? '更新已准备完成，正在重启，账号和采集数据保留。' : code ? '启动/运行失败，详情见 logs 目录。' : '服务已停止，数据已保留。');
     // All owned children are terminated before the supervisor exits.
@@ -102,6 +109,12 @@ async function start() {
     });
     await new Promise((resolve, reject) => { control.once('error', reject); control.listen(0, '127.0.0.1', resolve); });
     record.controlPort = control.address().port; fs.writeFileSync(stateFile, JSON.stringify(record), { mode: 0o600 });
+    if (process.platform === 'win32') {
+      statusWindow = spawn(path.join(appRoot, 'bin', 'DouyinDanmu.Status.exe'), [root, String(process.pid), '--managed'],
+        { cwd: root, stdio: ['pipe', 'ignore', 'inherit'] });
+      statusWindow.stdin?.on('error', () => {}); // The desktop can close before the service.
+      statusWindow.on('error', error => console.error('无法显示运行窗口：' + error.message));
+    }
     const env = { ...process.env, BIND_HOST: '127.0.0.1', HTTP_PORT: String(backendPort), WS_PORT: String(wsPort), SETTINGS_PORT: String(settingsPort),
       DATABASE_PATH: path.join(data, 'pipeline.db'), INTERNAL_TOKEN: crypto.randomBytes(32).toString('hex'),
       BACKEND_URL: `http://127.0.0.1:${backendPort}`, INGEST_TRANSPORT: 'local', AUTH_ORIGINS: origins.join(','),
@@ -141,9 +154,10 @@ async function start() {
     }
     if (!healthy) throw new Error('后端未能启动，请查看 logs/backend.log');
     launch('collector', process.execPath, [path.join(appRoot, 'app', 'collector', 'index.js')]);
+    statusWindow?.stdin?.write('ready\n');
     console.log(`直播台已启动：http://localhost:${port}`);
     console.log(debug ? 'Debug 模式：协议诊断已开启。' : '普通模式：协议诊断已隐藏。');
-    console.log('首次访问创建管理员账号。停止请按 Ctrl+C 或运行 stop.cmd。');
+    console.log('首次访问创建管理员账号。可在运行窗口或系统托盘退出，也可运行 stop.cmd。');
     if (!args.includes('--no-browser')) spawn('rundll32.exe', ['url.dll,FileProtocolHandler', `http://localhost:${port}`], { windowsHide: true, stdio: 'ignore' }).on('error', () => {});
   } catch (error) { console.error(error.message); await shutdown(1); }
 }

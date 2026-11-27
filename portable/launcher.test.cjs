@@ -12,7 +12,7 @@ const source = fs.readFileSync(path.join(__dirname, 'launcher.js'), 'utf8');
 async function runLauncher(health, options = {}) {
   let elapsed = 0, nextPort = 12000, finish;
   const finished = new Promise(resolve => { finish = resolve; });
-  const files = new Map(), messages = [], launches = [], kills = [];
+  const files = new Map(), messages = [], launches = [], kills = [], windows = [];
   if (options.pending) files.set(path.join(options.env.DOUYIN_INSTALL_ROOT, '.updates', 'pending-version'), 'a'.repeat(32));
   const server = (web = false) => Object.assign(new EventEmitter(), {
     listen(port, host, ready) {
@@ -38,6 +38,12 @@ async function runLauncher(health, options = {}) {
     on() {}, kill() {}, exit: code => finish({ exitCode: code }),
   };
   const spawn = (file, args) => {
+    if (file.endsWith('DouyinDanmu.Status.exe')) {
+      const child = new EventEmitter(), input = [];
+      child.stdin = Object.assign(new EventEmitter(), { write: line => input.push(line) });
+      windows.push({ file, args, input });
+      return child;
+    }
     const name = file.endsWith('douyin-pipeline.exe') ? 'backend' : 'collector';
     launches.push({ name, file, args, at: elapsed });
     const child = new EventEmitter();
@@ -72,7 +78,7 @@ async function runLauncher(health, options = {}) {
   });
   const result = await finished;
   await new Promise(resolve => setImmediate(resolve));
-  return { ...result, messages, launches, kills, authOptions, installerOptions, serviceOptions };
+  return { ...result, messages, launches, kills, windows, authOptions, installerOptions, serviceOptions };
 }
 
 test('waits through minutes of responsive maintenance before starting collection', async () => {
@@ -146,6 +152,9 @@ test('an activated version uses new program files and the original user data roo
   assert.equal(result.installerOptions.installRoot, installRoot);
   assert.equal(result.installerOptions.appRoot, appRoot);
   assert.equal(result.serviceOptions.currentVersion, '2.5.0');
+  assert.deepEqual([...result.windows[0].args], [installRoot, '1', '--managed']);
+  assert.equal(result.windows[0].file, path.join(appRoot, 'bin', 'DouyinDanmu.Status.exe'));
+  assert.deepEqual(result.windows[0].input, ['ready\n']);
   assert.equal(typeof result.serviceOptions.installRelease, 'function');
 });
 

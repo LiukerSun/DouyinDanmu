@@ -54,7 +54,7 @@
 
 ## Windows 便携版
 
-[下载 v2.7.2 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.2/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.2/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.7.2)
+[下载 v2.7.3 Windows 便携包](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.3/DouyinDanmu-win-x64-portable.zip) · [SHA256 校验文件](https://github.com/LiukerSun/DouyinDanmu/releases/download/v2.7.3/DouyinDanmu-win-x64-portable.zip.sha256) · [Release 页面](https://github.com/LiukerSun/DouyinDanmu/releases/tag/v2.7.3)
 
 系统要求：**Windows 10（1903 或更新版本）/ Windows 11，x64**。运行环境已包含在发布包中，无需安装 Docker、Node.js、数据库或编译器。
 
@@ -82,7 +82,7 @@ v2.1.3 修复礼物连送重复计数与明细显示：同组累计 1～10 只�
 | `start.cmd --port 3001` | 指定网页端口 |
 | `start.cmd --no-browser` | 启动服务，不自动打开浏览器 |
 
-也可在启动窗口按 Ctrl+C 停止。同一解压目录只能运行一个实例；服务仅监听本机地址。
+Windows 便携版 v2.7.3 起会显示任务栏运行窗口。最小化后，服务继续运行，双击系统托盘图标可恢复窗口，右键可打开工作台或退出。关闭运行窗口会停止服务。同一解压目录只能运行一个实例，服务仅监听本机地址。
 
 ## Docker Compose
 

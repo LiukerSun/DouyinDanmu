@@ -65,7 +65,7 @@ static bool stop_job(HANDLE job) {
     }
     return false;
 }
-int wmain(int argc,wchar_t** argv) {
+static int run(int argc,wchar_t** argv) {
     wchar_t filename[32768];DWORD length=GetModuleFileNameW(nullptr,filename,32768);
     if(!length || length>=32768)return 1;
     const std::wstring executable(filename,length),root=executable.substr(0,executable.find_last_of(L"\\/"));
@@ -89,8 +89,25 @@ int wmain(int argc,wchar_t** argv) {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         if(!SetInformationJobObject(job,JobObjectExtendedLimitInformation,&limits,sizeof(limits))){CloseHandle(job);return 1;}
         STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION process{};
+        // A GUI launcher has no console. Keep startup diagnostics in the install root.
+        const auto logs=root+L"\\logs";
+        CreateDirectoryW(logs.c_str(),nullptr);
+        SECURITY_ATTRIBUTES inherit{sizeof(SECURITY_ATTRIBUTES),nullptr,TRUE};
+        const auto log=CreateFileW((logs+L"\\launcher.log").c_str(),FILE_APPEND_DATA,
+            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,&inherit,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+        const auto input=CreateFileW(L"NUL",GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,&inherit,OPEN_EXISTING,0,nullptr);
+        if(log==INVALID_HANDLE_VALUE || input==INVALID_HANDLE_VALUE) {
+            if(log!=INVALID_HANDLE_VALUE)CloseHandle(log);
+            if(input!=INVALID_HANDLE_VALUE)CloseHandle(input);
+            CloseHandle(job);return 1;
+        }
+        startup.dwFlags=STARTF_USESTDHANDLES;
+        startup.hStdInput=input;startup.hStdOutput=log;startup.hStdError=log;
         std::vector<wchar_t> buffer(command.begin(),command.end());buffer.push_back(0);
-        if(!CreateProcessW(node.c_str(),buffer.data(),nullptr,nullptr,FALSE,CREATE_SUSPENDED,nullptr,root.c_str(),&startup,&process)) {
+        const auto started=CreateProcessW(node.c_str(),buffer.data(),nullptr,nullptr,TRUE,
+            CREATE_NO_WINDOW|CREATE_SUSPENDED,nullptr,root.c_str(),&startup,&process);
+        CloseHandle(input);CloseHandle(log);
+        if(!started) {
             std::cerr<<"Cannot start bundled runtime: "<<GetLastError()<<std::endl;CloseHandle(job);return 1;
         }
         if(!AssignProcessToJobObject(job,process.hProcess)){TerminateProcess(process.hProcess,1);CloseHandle(process.hThread);CloseHandle(process.hProcess);CloseHandle(job);return 1;}
@@ -104,4 +121,17 @@ int wmain(int argc,wchar_t** argv) {
         }
         std::cout<<"Update verified; restarting the new version."<<std::endl;
     }
+}
+
+int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int show) {
+    int argc=0;
+    auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);
+    if(!argv)return 1;
+    const auto result=run(argc,argv);
+    LocalFree(argv);
+    if(result!=0 && show!=SW_HIDE) {
+        MessageBoxW(nullptr,L"启动失败。请查看安装目录中的 logs\\launcher.log。若直播台已在运行，可从任务栏或系统托盘打开。",
+            L"抖音直播台",MB_OK|MB_ICONWARNING);
+    }
+    return result;
 }

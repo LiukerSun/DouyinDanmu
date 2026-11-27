@@ -46,6 +46,9 @@ try {
   foreach ($folder in @('', 'bin', 'runtime', 'web', 'app/portable', 'app/auth', 'app/collector/proto', 'licenses')) { New-Item -ItemType Directory -Path (Join-Path $output $folder) -Force | Out-Null }
   Copy-Item -LiteralPath (Join-Path $build 'douyin-pipeline.exe') -Destination (Join-Path $output 'bin')
   Copy-Item -LiteralPath (Join-Path $build 'DouyinDanmu.exe') -Destination $output
+  $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+  & $csc /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Net.Http.dll "/win32icon:$(Join-Path $PSScriptRoot 'studio.ico')" "/out:$(Join-Path $output 'bin/DouyinDanmu.Status.exe')" (Join-Path $PSScriptRoot 'StatusWindow.cs')
+  Check-Exit 'Build Windows status window'
   Copy-Item -LiteralPath $node -Destination (Join-Path $output 'runtime')
   Copy-Item -LiteralPath (Join-Path $nodeDirectory 'LICENSE') -Destination (Join-Path $output 'licenses/Node-LICENSE.txt')
   Copy-Item -Path (Join-Path $project 'frontend/dist/*') -Destination (Join-Path $output 'web') -Recurse

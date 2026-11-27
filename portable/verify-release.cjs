@@ -29,7 +29,7 @@ function run(file,args=[]) { const child=spawn(file,args,{cwd:app,env,windowsHid
     return {status:r.status,data:await r.json()};
   };
   const launch=async debug=>{const child=run(path.join(app,'DouyinDanmu.exe'),['--port',String(port),'--no-browser',...(debug?['--debug']:[])]);await until(async()=>{if(child.exitCode!==null)throw Error(child.output());return(await fetch(base+'/health/live')).ok;},'start');return child;};
-  const stop=async child=>{const task=run(process.env.ComSpec,['/d','/c','stop.cmd']);await until(()=>task.exitCode!==null,'stop command');assert.equal(task.exitCode,0,task.output());await until(()=>child.exitCode!==null,'process tree shutdown');assert.equal(child.exitCode,0,child.output());assert(!fs.existsSync(path.join(app,'data/.runtime/instance.json')));};
+  const stop=async child=>{const task=run(process.env.ComSpec,['/d','/c','stop.cmd']);await until(()=>task.exitCode!==null,'stop command');assert.equal(task.exitCode,0,task.output());await until(()=>child.exitCode!==null,'launcher exit');assert.equal(child.exitCode,0,child.output());await until(()=>!fs.existsSync(path.join(app,'data/.runtime/instance.json')),'service shutdown');};
   let child=await launch(false);
   assert.equal((await request('/api/rooms')).status,401);
   assert.equal((await request('/api/rooms/demo/remove','POST')).status,401);
